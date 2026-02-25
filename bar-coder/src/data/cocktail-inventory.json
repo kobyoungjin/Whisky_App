@@ -1,0 +1,68 @@
+[
+  {
+    "id": "inv-001",
+    "name": "Jameson Irish Whiskey",
+    "category": "위스키",
+    "quantity": 750,
+    "unit": "ml",
+    "abv": 40,
+    "origin": "아일랜드",
+    "notes": "부드러운 트리플 디스틸드 위스키",
+    "imageUrl": null
+  },
+  {
+    "id": "inv-002",
+    "name": "Tanqueray London Dry Gin",
+    "category": "진",
+    "quantity": 500,
+    "unit": "ml",
+    "abv": 43.1,
+    "origin": "영국",
+    "notes": "클래식 런던 드라이 진",
+    "imageUrl": null
+  },
+  {
+    "id": "inv-003",
+    "name": "Bacardi Superior Rum",
+    "category": "럼",
+    "quantity": 350,
+    "unit": "ml",
+    "abv": 37.5,
+    "origin": "쿠바",
+    "notes": "라이트 바디 화이트 럼",
+    "imageUrl": null
+  },
+  {
+    "id": "inv-004",
+    "name": "Olmeca Blanco Tequila",
+    "category": "데킬라",
+    "quantity": 600,
+    "unit": "ml",
+    "abv": 38,
+    "origin": "멕시코",
+    "notes": "블랑코 테킬라",
+    "imageUrl": null
+  },
+  {
+    "id": "inv-005",
+    "name": "Smirnoff Vodka",
+    "category": "보드카",
+    "quantity": 800,
+    "unit": "ml",
+    "abv": 37.5,
+    "origin": "러시아",
+    "notes": "트리플 디스틸드 보드카",
+    "imageUrl": null
+  },
+  {
+    "id": "inv-006",
+    "name": "Cointreau",
+    "category": "리큐르",
+    "quantity": 250,
+    "unit": "ml",
+    "abv": 40,
+    "origin": "프랑스",
+    "notes": "오렌지 리큐르",
+    "imageUrl": null
+  }
+]

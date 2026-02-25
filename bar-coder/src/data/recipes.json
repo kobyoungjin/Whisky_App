@@ -1,0 +1,116 @@
+[
+    {
+        "id": "r-001",
+        "name": "Negroni",
+        "category": "클래식",
+        "ingredients": [
+            "진 30ml",
+            "베르무트 로쏘 30ml",
+            "캄파리 30ml"
+        ],
+        "garnish": "오렌지 슬라이스",
+        "glass": "올드 패션드",
+        "method": "Stir",
+        "description": "쓴맛과 단맛이 균형을 이루는 클래식 이탈리안 칵테일"
+    },
+    {
+        "id": "r-002",
+        "name": "Mojito",
+        "category": "클래식",
+        "ingredients": [
+            "화이트 럼 45ml",
+            "라임 주스 30ml",
+            "설탕 시럽 15ml",
+            "민트 잎",
+            "소다수"
+        ],
+        "garnish": "민트 스프리그",
+        "glass": "하이볼",
+        "method": "Muddle & Build",
+        "description": "상큼하고 민트향이 살아있는 쿠바 클래식"
+    },
+    {
+        "id": "r-003",
+        "name": "Margarita",
+        "category": "클래식",
+        "ingredients": [
+            "테킬라 45ml",
+            "코인트로 20ml",
+            "라임 주스 25ml"
+        ],
+        "garnish": "소금 림, 라임 웨지",
+        "glass": "마르가리타",
+        "method": "Shake",
+        "description": "테킬라 베이스의 시트러스 칵테일"
+    },
+    {
+        "id": "r-004",
+        "name": "Whisky Sour",
+        "category": "사워",
+        "ingredients": [
+            "버번 위스키 45ml",
+            "레몬 주스 30ml",
+            "설탕 시럽 15ml",
+            "달걀 흰자(선택)"
+        ],
+        "garnish": "레몬 슬라이스, 체리",
+        "glass": "올드 패션드",
+        "method": "Shake",
+        "description": "위스키와 레몬의 조화로운 사워 칵테일"
+    },
+    {
+        "id": "r-005",
+        "name": "Moscow Mule",
+        "category": "하이볼",
+        "ingredients": [
+            "보드카 45ml",
+            "진저 비어 120ml",
+            "라임 주스 15ml"
+        ],
+        "garnish": "라임 웨지, 민트",
+        "glass": "구리 머그",
+        "method": "Build",
+        "description": "청량하고 매콤한 진저 풍미의 칵테일"
+    },
+    {
+        "id": "r-006",
+        "name": "Gin & Tonic",
+        "category": "하이볼",
+        "ingredients": [
+            "진 45ml",
+            "토닉 워터 120ml"
+        ],
+        "garnish": "라임 웨지, 주니퍼 베리",
+        "glass": "하이볼",
+        "method": "Build",
+        "description": "진의 쓴맛과 토닉의 풍미가 어우러지는 클래식"
+    },
+    {
+        "id": "r-007",
+        "name": "Old Fashioned",
+        "category": "클래식",
+        "ingredients": [
+            "버번 위스키 60ml",
+            "설탕 1티스푼",
+            "앙고스투라 비터스 2대시"
+        ],
+        "garnish": "오렌지 필, 체리",
+        "glass": "올드 패션드",
+        "method": "Stir",
+        "description": "위스키 본연의 맛을 살린 클래식의 정석"
+    },
+    {
+        "id": "r-008",
+        "name": "Daiquiri",
+        "category": "클래식",
+        "ingredients": [
+            "럼 45ml",
+            "라임 주스 25ml",
+            "설탕 시럽 15ml"
+        ],
+        "garnish": "라임 웨지",
+        "glass": "칵테일",
+        "method": "Shake",
+        "description": "심플하지만 완벽한 균형의 럼 클래식"
+    }
+]

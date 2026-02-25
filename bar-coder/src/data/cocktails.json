@@ -1,0 +1,101 @@
+[
+    {
+        "id": "c-001",
+        "name": "Negroni",
+        "category": "클래식",
+        "ingredients": [
+            "진 30ml",
+            "베르무트 로쏘 30ml",
+            "캄파리 30ml"
+        ],
+        "garnish": "오렌지 필",
+        "glass": "올드 패션드",
+        "method": "Stir",
+        "description": "★ 홈바 추천 - 쓴맛과 단맛의 완벽한 균형",
+        "difficulty": "Easy",
+        "rating": 4.8
+    },
+    {
+        "id": "c-002",
+        "name": "Whisky Highball",
+        "category": "하이볼",
+        "ingredients": [
+            "재패니즈 위스키 45ml",
+            "탄산수 120ml"
+        ],
+        "garnish": "레몬 슬라이스",
+        "glass": "하이볼",
+        "method": "Build",
+        "description": "간단하면서 위스키 향이 살아있는 홈바 인기 메뉴",
+        "difficulty": "Easy",
+        "rating": 4.5
+    },
+    {
+        "id": "c-003",
+        "name": "Mojito",
+        "category": "클래식",
+        "ingredients": [
+            "화이트 럼 45ml",
+            "라임 주스 30ml",
+            "설탕 시럽 15ml",
+            "민트",
+            "소다수"
+        ],
+        "garnish": "민트 스프리그",
+        "glass": "하이볼",
+        "method": "Muddle",
+        "description": "여름에 어울리는 상큼하고 청량한 칵테일",
+        "difficulty": "Medium",
+        "rating": 4.6
+    },
+    {
+        "id": "c-004",
+        "name": "Irish Coffee",
+        "category": "핫",
+        "ingredients": [
+            "아이리시 위스키 45ml",
+            "핫 커피 120ml",
+            "설탕 1티스푼",
+            "생크림"
+        ],
+        "garnish": "생크림",
+        "glass": "아이리시 커피",
+        "method": "Build",
+        "description": "위스키와 커피의 환상적인 조합",
+        "difficulty": "Easy",
+        "rating": 4.7
+    },
+    {
+        "id": "c-005",
+        "name": "Espresso Martini",
+        "category": "마티니",
+        "ingredients": [
+            "보드카 45ml",
+            "에스프레소 30ml",
+            "커피 리큐르 15ml",
+            "설탕 시럽 5ml"
+        ],
+        "garnish": "커피 원두 3개",
+        "glass": "마티니",
+        "method": "Shake",
+        "description": "카페인과 알코올의 완벽한 만남",
+        "difficulty": "Medium",
+        "rating": 4.9
+    },
+    {
+        "id": "c-006",
+        "name": "Aperol Spritz",
+        "category": "스프리츠",
+        "ingredients": [
+            "아페롤 60ml",
+            "프로세코 90ml",
+            "소다수 30ml"
+        ],
+        "garnish": "오렌지 슬라이스",
+        "glass": "와인",
+        "method": "Build",
+        "description": "이탈리안 아페리티프, 달콤하고 쌉쌀한 맛",
+        "difficulty": "Easy",
+        "rating": 4.4
+    }
+]
