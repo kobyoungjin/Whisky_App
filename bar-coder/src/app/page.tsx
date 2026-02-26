@@ -1,24 +1,49 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import LoadingButton from "@/components/ui/LoadingButton";
-import { auth, googleProvider } from "@/lib/firebase";
-import { signInWithPopup } from "firebase/auth";
+import { loginWithGoogle, loginWithEmail, signUpWithEmail } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const router = useRouter();
 
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      await loginWithGoogle();
       router.push("/dashboard");
     } catch (error) {
       console.error("Login failed:", error);
-      alert("로그인에 실패했습니다. 설정을 확인해 주세요.");
+      alert("로그인에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      alert("이메일과 비밀번호를 입력해 주세요.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (isSignUp) {
+        await signUpWithEmail(email, password);
+        alert("회원가입이 완료되었습니다.");
+      } else {
+        await loginWithEmail(email, password);
+      }
+      router.push("/dashboard");
+    } catch (error: any) {
+      console.error("Auth Error:", error);
+      alert(error.message || "인증에 실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -28,7 +53,7 @@ export default function LoginPage() {
     <div className="flex flex-col items-center justify-center min-h-screen px-6 bg-[#1a1a1a]">
       <div className="w-full max-w-sm text-center animate-fade-in-up">
         {/* Logo or App Name */}
-        <div className="mb-12">
+        <div className="mb-8">
           <div className="relative w-24 h-24 mx-auto mb-6">
             <div className="absolute inset-0 bg-[#d4a843] opacity-20 blur-2xl rounded-full animate-pulse" />
             <div className="relative flex items-center justify-center w-full h-full border-2 border-[#d4a843]/30 rounded-full">
@@ -43,10 +68,39 @@ export default function LoginPage() {
 
         {/* Login Card */}
         <div className="glass-card p-8 flex flex-col items-center">
-          <LoadingButton
+          <form onSubmit={handleEmailAuth} className="w-full mb-6">
+            <div className="space-y-4 mb-6">
+              <input
+                type="email"
+                placeholder="이메일"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-3 bg-[#333] border border-[#d4a843]/20 rounded-xl text-[#f0ede8] placeholder-[#a8a49d] focus:outline-none focus:border-[#d4a843]"
+              />
+              <input
+                type="password"
+                placeholder="비밀번호"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 bg-[#333] border border-[#d4a843]/20 rounded-xl text-[#f0ede8] placeholder-[#a8a49d] focus:outline-none focus:border-[#d4a843]"
+              />
+            </div>
+            <LoadingButton loading={loading} type="submit" className="w-full">
+              {isSignUp ? "회원가입" : "이메일로 계속하기"}
+            </LoadingButton>
+          </form>
+
+          <div className="flex items-center w-full mb-6 relative">
+            <div className="flex-1 border-t border-white/10"></div>
+            <span className="px-3 text-xs text-[#6b6761] bg-transparent z-10">OR</span>
+            <div className="flex-1 border-t border-white/10"></div>
+          </div>
+
+          <button
+            type="button"
             onClick={handleGoogleLogin}
-            loading={loading}
-            className="w-full py-4 flex items-center justify-center gap-3"
+            disabled={loading}
+            className="w-full py-3 flex items-center justify-center gap-3 bg-white text-black font-semibold rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -67,11 +121,15 @@ export default function LoginPage() {
               />
             </svg>
             Google 계정으로 시작하기
-          </LoadingButton>
+          </button>
 
-          <p className="mt-6 text-[10px] text-[#6b6761] text-center font-medium">
-            계속 진행함으로써 서비스 이용약관 및 <br />개인정보 처리방침에 동의하게 됩니다.
-          </p>
+          <button
+            type="button"
+            onClick={() => setIsSignUp(!isSignUp)}
+            className="mt-6 text-xs text-[#a8a49d] hover:text-[#d4a843] transition-colors"
+          >
+            {isSignUp ? "이미 계정이 있으신가요? 로그인" : "계정이 없으신가요? 회원가입"}
+          </button>
         </div>
       </div>
     </div>

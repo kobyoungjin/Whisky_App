@@ -1,22 +1,26 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import InventoryCard from "@/components/dashboard/InventoryCard";
+import DashboardStats from "@/components/dashboard/DashboardStats";
 import CocktailGrid from "@/components/dashboard/CocktailGrid";
 import SkeletonCard from "@/components/ui/SkeletonCard";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-
-// 더미 데이터 로드 (Baserow 연동 전)
-import inventoryData from "@/data/cocktail-inventory.json";
-import cocktailData from "@/data/cocktails.json";
+import { getInventory, getRecipes } from "@/lib/baserow";
+import { InventoryItem, RecipeItem } from "@/types/baserow";
+import { checkCocktailAvailability } from "@/lib/substitute";
+import Link from "next/link";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 export default function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [inventory, setInventory] = useState<InventoryItem[]>([]);
+    const [makeableCocktails, setMakeableCocktails] = useState<RecipeItem[]>([]);
+    const [isExpanded, setIsExpanded] = useState(false);
 
     useEffect(() => {
         if (!authLoading && !user) {
@@ -25,14 +29,37 @@ export default function DashboardPage() {
     }, [user, authLoading, router]);
 
     useEffect(() => {
-        // API 호출 시뮬레이션
-        const timer = setTimeout(() => {
-            setLoading(false);
-            // 의도적으로 에러를 발생시키려면 아래 주석 해제
-            // setError("데이터를 불러오는 중 문제가 발생했습니다. (Baserow API 연결 오류)");
-        }, 1500);
-        return () => clearTimeout(timer);
-    }, []);
+        const fetchDashboardData = async () => {
+            if (!user) return;
+            setLoading(true);
+            setError(null);
+            try {
+                const [invData, recData] = await Promise.all([
+                    getInventory(user.uid),
+                    getRecipes()
+                ]);
+                setInventory(invData);
+
+                // 내 재고로 만들 수 있는(isAvailable) 칵테일 필터링
+                const available = recData.filter(recipe => {
+                    const result = checkCocktailAvailability(recipe, invData);
+                    return result.isAvailable;
+                });
+
+                setMakeableCocktails(available);
+
+            } catch (err: any) {
+                console.error(err);
+                setError(err.message || "데이터를 불러오는 중 문제가 발생했습니다.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (user && !authLoading) {
+            fetchDashboardData();
+        }
+    }, [user, authLoading]);
 
     if (authLoading || !user) {
         return (
@@ -42,63 +69,74 @@ export default function DashboardPage() {
         );
     }
 
+    const displayedCocktails = isExpanded ? makeableCocktails : makeableCocktails.slice(0, 12);
+    const hasMore = makeableCocktails.length > 12;
+
     return (
-        <div className="px-6 py-8 max-w-5xl mx-auto animate-fade-in-up">
+        <div className="px-4 py-8 max-w-md mx-auto animate-fade-in-up pb-24">
             {/* Header */}
-            <div className="mb-10">
-                <h2 className="text-2xl font-bold text-[#f0ede8] mb-1">
-                    반가워요, <span className="gold-text">{user.displayName || "Home Bartender"}</span>님!
+            <div className="mb-6 px-2">
+                <h2 className="text-xl font-bold text-[#f0ede8] mb-1">
+                    반가워요, <span className="gold-text">{user.displayName || user.email?.split('@')[0] || "Home Bartender"}</span>님!
                 </h2>
-                <p className="text-[#a8a49d] text-sm">현재 홈바의 상태와 추천 레시피입니다.</p>
+                <p className="text-[#a8a49d] text-xs">현재 홈바의 전체 재고 현황 요약입니다.</p>
             </div>
 
             {error && (
-                <div className="mb-8">
+                <div className="mb-6 px-2">
                     <ErrorAlert message={error} onClose={() => setError(null)} />
                 </div>
             )}
 
-            {/* Inventory Section */}
-            <section className="mb-12">
-                <div className="flex justify-between items-end mb-6">
+            {/* Dashboard Stats (with Scan Button) */}
+            <div className="px-2">
+                {!loading && <DashboardStats inventory={inventory} />}
+            </div>
+
+            {/* Makeable Cocktails Section */}
+            <section className="mt-8 px-2">
+                <div className="flex justify-between items-end mb-4">
                     <div>
-                        <h3 className="text-lg font-bold text-[#f0ede8]">재고 현황</h3>
+                        <h3 className="text-lg font-bold text-[#f0ede8]">지금 만들 수 있는 칵테일</h3>
                         <div className="gold-divider w-12 mt-1 opacity-100" />
                     </div>
-                    <button className="text-xs font-semibold text-[#d4a843] hover:text-[#e8c06a] transition-colors">
-                        전체보기 &rarr;
-                    </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {loading
-                        ? [1, 2, 3].map((i) => <SkeletonCard key={i} />)
-                        : inventoryData.slice(0, 3).map((item) => (
-                            <InventoryCard key={item.id} item={item} />
-                        ))}
-                </div>
-            </section>
-
-            {/* Cocktail Recommendation Section */}
-            <section>
-                <div className="flex justify-between items-end mb-6">
-                    <div>
-                        <h3 className="text-lg font-bold text-[#f0ede8]">추천 칵테일</h3>
-                        <div className="gold-divider w-12 mt-1 opacity-100" />
-                    </div>
-                    <button className="text-xs font-semibold text-[#6b6761] hover:text-[#a8a49d] transition-colors">
-                        필터링
-                    </button>
+                    {makeableCocktails.length > 0 && (
+                        <span className="text-[10px] text-[#6b6761] mb-1">총 {makeableCocktails.length}개</span>
+                    )}
                 </div>
 
                 {loading ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {[1, 2, 3].map((i) => (
-                            <div key={i} className="glass-card h-64 skeleton-shimmer" />
-                        ))}
+                    <div className="grid grid-cols-2 gap-4 mt-6">
+                        {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-40 glass-card skeleton-shimmer" />)}
                     </div>
+                ) : makeableCocktails.length > 0 ? (
+                    <>
+                        {/* 4x4 Grid in Desktop, 2xX in mobile layout limits */}
+                        <div className="mt-6">
+                            <CocktailGrid cocktails={displayedCocktails} inventory={inventory} />
+                        </div>
+
+                        {hasMore && (
+                            <button
+                                onClick={() => setIsExpanded(!isExpanded)}
+                                className="w-full mt-6 py-3 flex items-center justify-center gap-2 bg-[#2a2a2a] border border-[#d4a843]/30 rounded-xl text-sm font-bold text-[#d4a843] hover:bg-[#d4a843]/10 transition-colors"
+                            >
+                                {isExpanded ? (
+                                    <>접기 <ChevronUp className="w-4 h-4" /></>
+                                ) : (
+                                    <>모두 보기 (+{makeableCocktails.length - 12}개) <ChevronDown className="w-4 h-4" /></>
+                                )}
+                            </button>
+                        )}
+                    </>
                 ) : (
-                    <CocktailGrid cocktails={cocktailData} />
+                    <div className="mt-6 col-span-full p-8 text-center text-[#6b6761] glass-card flex flex-col items-center justify-center">
+                        <span className="text-3xl mb-3">🍸</span>
+                        <p className="text-sm">현재 재고로 만들 수 있는 칵테일이 없어요.</p>
+                        <Link href="/mypage" className="mt-2 text-xs text-[#d4a843] underline underline-offset-4">
+                            스캔 기능을 통해 술을 등록해 보세요!
+                        </Link>
+                    </div>
                 )}
             </section>
         </div>

@@ -25,7 +25,8 @@ export const viewport: Viewport = {
   themeColor: "#1a1a1a",
 };
 
-import BottomNav from "@/components/layout/BottomNav";
+import BottomNav from "@/components/ui/BottomNav";
+import ChatBot from "@/components/chatbot/ChatBot";
 
 export default function RootLayout({
   children,
@@ -42,6 +43,7 @@ export default function RootLayout({
           {children}
         </main>
         <BottomNav />
+        <ChatBot />
       </body>
     </html>
   );

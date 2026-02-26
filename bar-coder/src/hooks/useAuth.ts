@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { onAuthStateChanged, User } from "firebase/auth";
+import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 export function useAuth() {
@@ -17,5 +17,13 @@ export function useAuth() {
         return () => unsubscribe();
     }, []);
 
-    return { user, loading };
+    const logOut = async () => {
+        try {
+            await signOut(auth);
+        } catch (error) {
+            console.error("Logout failed", error);
+        }
+    };
+
+    return { user, loading, logOut };
 }
