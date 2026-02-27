@@ -26,6 +26,7 @@ export default function MyPage() {
     const [activeShoppingTab, setActiveShoppingTab] = useState<"base" | "liqueur" | "ingredient">("base");
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+    const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -262,9 +263,9 @@ export default function MyPage() {
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={() => router.push("/dashboard")}
+                        onClick={() => setIsVersionModalOpen(true)}
                         className="p-2 rounded-lg bg-[#333] text-[#a8a49d] hover:text-[#f0ede8] transition-colors"
-                        title="대시보드 가기"
+                        title="버전 정보"
                     >
                         <Settings className="w-5 h-5" />
                     </button>
@@ -606,6 +607,53 @@ export default function MyPage() {
                                 )}
                             </button>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Version Info Modal */}
+            {isVersionModalOpen && (
+                <div
+                    className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    onClick={() => setIsVersionModalOpen(false)}
+                >
+                    <div
+                        className="w-full max-w-sm bg-[#1a1a1a] rounded-3xl border border-white/10 p-8 animate-fade-in-up relative overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="absolute -top-20 -right-20 w-40 h-40 bg-[#d4a843]/10 blur-[60px] rounded-full" />
+                        <div className="flex justify-between items-center mb-6 relative z-10">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-[#d4a843]/20 flex items-center justify-center">
+                                    <Settings className="w-5 h-5 text-[#d4a843]" />
+                                </div>
+                                <h3 className="text-lg font-bold text-[#f0ede8]">앱 정보</h3>
+                            </div>
+                            <button
+                                onClick={() => setIsVersionModalOpen(false)}
+                                className="p-1 rounded-full hover:bg-white/5 transition-colors"
+                            >
+                                <X className="w-5 h-5 text-[#6b6761]" />
+                            </button>
+                        </div>
+                        <div className="space-y-4 relative z-10">
+                            <div className="flex items-center justify-between py-3 border-b border-white/5">
+                                <span className="text-sm text-[#a8a49d]">앱 이름</span>
+                                <span className="text-sm font-bold text-[#f0ede8]">Bar Coder</span>
+                            </div>
+                            <div className="flex items-center justify-between py-3 border-b border-white/5">
+                                <span className="text-sm text-[#a8a49d]">버전 정보</span>
+                                <span className="text-sm font-bold text-[#d4a843]">1.0.1</span>
+                            </div>
+                            <div className="flex items-center justify-between py-3 border-b border-white/5">
+                                <span className="text-sm text-[#a8a49d]">AI 모델</span>
+                                <span className="text-sm font-bold text-[#f0ede8]">Gemini 2.5 Flash</span>
+                            </div>
+                            <div className="flex items-center justify-between py-3">
+                                <span className="text-sm text-[#a8a49d]">개발</span>
+                                <span className="text-sm font-bold text-[#f0ede8]">Home Bartender</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
