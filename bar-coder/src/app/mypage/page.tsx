@@ -19,7 +19,8 @@ export default function MyPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
-    const [categoryOptions, setCategoryOptions] = useState<{ id: number; value: string }[]>([]);
+    const [categoryOptions, setCategoryOptions] = useState<{ id: number; value: string; color?: string }[]>([]);
+
 
     const [activeInventoryTab, setActiveInventoryTab] = useState<"base" | "liqueur" | "ingredient">("base");
     const [activeShoppingTab, setActiveShoppingTab] = useState<"base" | "liqueur" | "ingredient">("base");
@@ -37,17 +38,19 @@ export default function MyPage() {
 
     // 카테고리 분류 상수 (Baserow Select Option Values와 일치해야 함)
     const CATEGORIES = {
-        base: ["위스키", "진", "럼", "보드카", "데킬라", "테킬라", "브랜디", "소주", "기타 증류주"],
+        base: ["위스키", "스카치 위스키", "버번 위스키", "진", "럼", "보드카", "데킬라", "테킬라", "브랜디", "꼬냑", "와인", "소주", "전통주", "기타 증류주"],
         liqueur: ["리큐르", "베르무트", "리큐어"],
-        ingredient: ["과일", "주스", "쥬스", "시럽", "소다", "탄산수", "비터", "설탕", "와인", "맥주", "음료", "기타"]
+        ingredient: ["과일", "주스", "쥬스", "시럽", "소다", "탄산수", "비터", "설탕", "맥주", "음료", "기타"]
     };
+
 
     const categorize = (name: string = "", categoryValue: string = "") => {
         const n = name.toLowerCase();
         const c = categoryValue.toLowerCase();
 
         // 보강된 키워드 세트
-        const baseKeywords = [...CATEGORIES.base, "whisky", "whiskey", "blended", "single malt", "scotch", "bourbon", "스카치", "버번", "싱글몰트", "블렌디드", "발렌타인", "맥캘란", "glen", "글렌", "springbank", "스프링뱅크"];
+        const baseKeywords = [...CATEGORIES.base, "whisky", "whiskey", "blended", "single malt", "scotch", "bourbon", "스카치", "버번", "싱글몰트", "블렌디드", "발렌타인", "맥캘란", "glen", "글렌", "springbank", "스프링뱅크", "cognac", "wine", "wine", "cognac", "와인", "꼬냑"];
+
         const liqueurKeywords = [...CATEGORIES.liqueur, "liqueur", "bols", "de kuyper", "깔루아", "베일리", "말리부", "트리플", "섹", "디카이퍼"];
 
         // 1순위: 카테고리 값 기준 (Baserow 설정값 우선)
@@ -169,9 +172,10 @@ export default function MyPage() {
             name: item.name,
             abv: item.abv,
             volume: item.volume,
-            category: item.category?.value || "위스키"
+            category: item.category?.value || (activeInventoryTab === "base" ? "위스키" : activeInventoryTab === "liqueur" ? "리큐르" : "시럽")
         });
     };
+
 
     const handleDelete = async (id: number) => {
         if (!confirm("정말 이 재고를 삭제하시겠습니까?")) return;
@@ -202,6 +206,7 @@ export default function MyPage() {
             // Find existing category ID for the selected category value
             const matchedOption = categoryOptions.find(opt => opt.value === formData.category);
             const categoryValue = matchedOption ? matchedOption.id : formData.category;
+
 
             const payload = {
                 name: formData.name,
@@ -558,25 +563,32 @@ export default function MyPage() {
                                         className="w-full bg-[#2a2a2a]/50 border border-white/10 rounded-xl py-3 px-4 text-[#f0ede8] focus:outline-none focus:border-[#d4a843]/50 transition-all appearance-none pr-10"
                                     >
                                         <optgroup label="술 (Base 기주)" className="bg-[#1a1a1a] text-[#a8a49d]">
-                                            {CATEGORIES.base.map(cat => (
-                                                <option key={cat} value={cat} className="text-[#f0ede8]">{cat}</option>
-                                            ))}
+                                            {categoryOptions
+                                                .filter(opt => CATEGORIES.base.includes(opt.value))
+                                                .map(opt => (
+                                                    <option key={opt.id} value={opt.value} className="text-[#f0ede8]">{opt.value}</option>
+                                                ))}
                                         </optgroup>
                                         <optgroup label="리큐르 (Liqueur)" className="bg-[#1a1a1a] text-[#a8a49d]">
-                                            {CATEGORIES.liqueur.map(cat => (
-                                                <option key={cat} value={cat} className="text-[#f0ede8]">{cat}</option>
-                                            ))}
+                                            {categoryOptions
+                                                .filter(opt => CATEGORIES.liqueur.includes(opt.value))
+                                                .map(opt => (
+                                                    <option key={opt.id} value={opt.value} className="text-[#f0ede8]">{opt.value}</option>
+                                                ))}
                                         </optgroup>
                                         <optgroup label="부재료 (Ingredient)" className="bg-[#1a1a1a] text-[#a8a49d]">
-                                            {CATEGORIES.ingredient.map(cat => (
-                                                <option key={cat} value={cat} className="text-[#f0ede8]">{cat}</option>
-                                            ))}
+                                            {categoryOptions
+                                                .filter(opt => CATEGORIES.ingredient.includes(opt.value) || (!CATEGORIES.base.includes(opt.value) && !CATEGORIES.liqueur.includes(opt.value) && !CATEGORIES.ingredient.includes(opt.value)))
+                                                .map(opt => (
+                                                    <option key={opt.id} value={opt.value} className="text-[#f0ede8]">{opt.value}</option>
+                                                ))}
                                         </optgroup>
                                     </select>
                                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
                                         <ChevronDown className="w-4 h-4 text-[#6b6761]" />
                                     </div>
                                 </div>
+
                             </div>
 
                             <button

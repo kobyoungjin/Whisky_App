@@ -86,9 +86,10 @@ export default function DashboardStats({ inventory }: DashboardStatsProps) {
             {/* 3. LOW STOCK */}
             <div className="flex-1 flex flex-col items-center justify-center group relative cursor-help">
                 <span className="text-3xl sm:text-4xl font-black text-red-500 mb-1">{lowStock.length}</span>
-                <span className="text-[10px] sm:text-xs font-bold text-red-800 uppercase tracking-widest group-hover:text-red-400 transition-colors">
+                <span className="text-[10px] sm:text-xs font-bold text-red-800 uppercase tracking-widest group-hover:text-red-400 transition-colors whitespace-nowrap">
                     Low Stock
                 </span>
+
 
                 {/* Tooltip */}
                 <div className="absolute top-full lg:right-1/2 lg:translate-x-1/2 right-0 mt-4 w-48 bg-[#2a2a2a] border border-red-500/30 rounded-xl p-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 shadow-2xl">
