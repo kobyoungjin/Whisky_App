@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import InventoryCard from "@/components/dashboard/InventoryCard";
 import SkeletonCard from "@/components/ui/SkeletonCard";
 import ErrorAlert from "@/components/ui/ErrorAlert";
@@ -15,7 +15,7 @@ import { storage } from "@/lib/firebase";
 import { InventoryItem } from "@/types/baserow";
 import { ShoppingCart, LogOut, Check, Trash2, Settings, X, Plus, Beaker, Wine, Droplets, ChevronDown, ExternalLink } from "lucide-react";
 
-export default function MyPage() {
+function MyPageContent() {
     const { user, logOut, loading: authLoading } = useAuth();
     const router = useRouter();
     const { items: shoppingList, addItem, removeItem, isLoaded: shoppingLoaded } = useShoppingList();
@@ -880,5 +880,17 @@ export default function MyPage() {
                 </div>
             )}
         </>
+    );
+}
+
+export default function MyPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex items-center justify-center min-h-screen bg-[#1a1a1a]">
+                <div className="spinner w-8 h-8 text-[#d4a843] border-2 rounded-full border-t-current border-transparent" />
+            </div>
+        }>
+            <MyPageContent />
+        </Suspense>
     );
 }
