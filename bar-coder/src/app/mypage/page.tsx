@@ -1,13 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import InventoryCard from "@/components/dashboard/InventoryCard";
 import SkeletonCard from "@/components/ui/SkeletonCard";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { useAuth } from "@/hooks/useAuth";
 import { useShoppingList } from "@/hooks/useShoppingList";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import BottleVolumeSlider from "@/components/ui/BottleVolumeSlider";
 import { getInventory, addInventoryItem, getInventoryFields, deleteInventoryItem, updateInventoryItem } from "@/lib/baserow";
+import { updateProfile } from "firebase/auth";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "@/lib/firebase";
 import { InventoryItem } from "@/types/baserow";
 import { ShoppingCart, LogOut, Check, Trash2, Settings, X, Plus, Beaker, Wine, Droplets, ChevronDown, ExternalLink } from "lucide-react";
 
@@ -27,6 +31,15 @@ export default function MyPage() {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
     const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
+    const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+    const [isPreferencesModalOpen, setIsPreferencesModalOpen] = useState(false);
+    const [newName, setNewName] = useState("");
+    
+    // Profile Image Upload State
+    const [selectedImage, setSelectedImage] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -39,9 +52,9 @@ export default function MyPage() {
 
     // 카테고리 분류 상수 (Baserow Select Option Values와 일치해야 함)
     const CATEGORIES = {
-        base: ["위스키", "스카치 위스키", "버번 위스키", "진", "럼", "보드카", "데킬라", "테킬라", "브랜디", "꼬냑", "와인", "소주", "전통주", "기타 증류주"],
+        base: ["위스키", "스카치 위스키", "버번 위스키", "버번", "스카치", "진", "럼", "보드카", "데킬라", "테킬라", "브랜디", "꼬냑", "코냑", "와인", "소주", "전통주", "기타 증류주"],
         liqueur: ["리큐르", "베르무트", "리큐어"],
-        ingredient: ["과일", "주스", "쥬스", "시럽", "소다", "탄산수", "비터", "설탕", "맥주", "음료", "기타"]
+        ingredient: ["과일", "주스", "쥬스", "시럽", "소다", "탄산수", "비터", "설탕", "소금", "가루", "맥주", "음료", "기타"]
     };
 
 
@@ -83,6 +96,45 @@ export default function MyPage() {
     const filteredShoppingList = useMemo(() => {
         return shoppingList.filter(itemName => categorize(itemName) === activeShoppingTab);
     }, [shoppingList, activeShoppingTab]);
+
+    // useSearchParams: 이미 /mypage에 있을 때도 URL 변경을 감지
+    const searchParams = useSearchParams();
+
+    // 외부 컴포넌트(TopAppBar 검색 모달) 등에서 URL 파라미터로 진입 시 Add 모달 자동 실행
+    useEffect(() => {
+        const ingredientDataEncoded = searchParams.get("ingredientData");
+        const addName = searchParams.get("addName");
+        const addCategory = searchParams.get("addCategory");
+
+        if (ingredientDataEncoded) {
+            try {
+                const decoded = JSON.parse(decodeURIComponent(atob(ingredientDataEncoded)));
+                setTimeout(() => {
+                    setFormData(prev => ({
+                        ...prev,
+                        name: decoded.name || "",
+                        category: decoded.category || prev.category,
+                        abv: typeof decoded.abv === "number" ? decoded.abv : prev.abv,
+                        volume: typeof decoded.volume === "number" ? decoded.volume : prev.volume,
+                    }));
+                    setIsAddModalOpen(true);
+                    window.history.replaceState(null, "", "/mypage");
+                }, 50);
+            } catch {
+                window.history.replaceState(null, "", "/mypage");
+            }
+        } else if (addName || addCategory) {
+            setTimeout(() => {
+                setFormData(prev => ({
+                    ...prev,
+                    name: addName ? addName : "",
+                    category: addCategory ? addCategory : prev.category,
+                }));
+                setIsAddModalOpen(true);
+                window.history.replaceState(null, "", "/mypage");
+            }, 50);
+        }
+    }, [searchParams]);
 
     // 인벤토리 카운트
     const inventoryCounts = useMemo(() => {
@@ -147,22 +199,65 @@ export default function MyPage() {
         }
     }, [formData.category]);
 
-    // [New] 모달 오픈 시 배경 스크롤 방지
+    // [New] 모든 모달 오픈 시 배경 스크롤 방지 (화면 고정)
     useEffect(() => {
-        if (isAddModalOpen || editingItem) {
+        if (isAddModalOpen || editingItem || isAccountModalOpen || isPreferencesModalOpen || isVersionModalOpen) {
             document.body.style.overflow = "hidden";
+            // iOS Safari bounce fix
+            document.body.style.touchAction = "none";
         } else {
             document.body.style.overflow = "unset";
+            document.body.style.touchAction = "auto";
         }
         return () => {
             document.body.style.overflow = "unset";
+            document.body.style.touchAction = "auto";
         };
-    }, [isAddModalOpen, editingItem]);
+    }, [isAddModalOpen, editingItem, isAccountModalOpen, isPreferencesModalOpen, isVersionModalOpen]);
 
     const handleLogout = async () => {
         if (confirm("정말 로그아웃 하시겠습니까?")) {
             await logOut();
             router.push("/");
+        }
+    };
+
+    const handleUpdateProfile = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!user) return;
+        
+        setIsUpdatingProfile(true);
+        try {
+            let newPhotoURL = user.photoURL;
+
+            // 이미지가 새로 선택된 경우 Firebase Storage에 업로드
+            if (selectedImage) {
+                const storageRef = ref(storage, `profiles/${user.uid}_${Date.now()}`);
+                await uploadBytes(storageRef, selectedImage);
+                newPhotoURL = await getDownloadURL(storageRef);
+            }
+
+            await updateProfile(user, { 
+                displayName: newName.trim() || user.displayName,
+                photoURL: newPhotoURL
+            });
+
+            alert("프로필이 성공적으로 업데이트되었습니다.");
+            setIsAccountModalOpen(false);
+            window.location.reload();
+        } catch (error) {
+            console.error("Profile update failed:", error);
+            alert("프로필 업데이트 중 오류가 발생했습니다.");
+        } finally {
+            setIsUpdatingProfile(false);
+        }
+    };
+
+    const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            setSelectedImage(file);
+            setImagePreview(URL.createObjectURL(file));
         }
     };
 
@@ -206,13 +301,21 @@ export default function MyPage() {
         try {
             // Find existing category ID for the selected category value
             const matchedOption = categoryOptions.find(opt => opt.value === formData.category);
-            const categoryValue = matchedOption ? matchedOption.id : formData.category;
+            // 만약 매칭되는 옵션이 없고 formData.category도 비어있다면 '기타'를 기본값으로 사용
+            const categoryValue = matchedOption ? matchedOption.id : (formData.category || "기타");
 
+            const abv = Number(formData.abv);
+            const volume = Number(formData.volume);
+
+            // 숫자 값 유효성 검사 (Baserow 400 방지)
+            if (isNaN(abv) || isNaN(volume)) {
+                throw new Error("도수 또는 용량 값이 유효하지 않습니다.");
+            }
 
             const payload = {
-                name: formData.name,
-                abv: Number(formData.abv),
-                volume: Number(formData.volume),
+                name: formData.name.trim(),
+                abv: abv,
+                volume: volume,
                 category: categoryValue as any,
             };
 
@@ -224,7 +327,7 @@ export default function MyPage() {
                 setIsAddModalOpen(false);
             }
 
-            setFormData({ ...formData, name: "" }); // Reset name
+            setFormData({ ...formData, name: "", abv: 40, volume: 700 }); // Reset form
             await fetchData(); // Refresh list
         } catch (err: any) {
             console.error("Form submission failed:", err);
@@ -243,41 +346,30 @@ export default function MyPage() {
     }
 
     return (
-        <div className="px-4 md:px-6 py-8 max-w-6xl mx-auto animate-fade-in-up pb-24">
-            {/* Header / Profile section */}
-            <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/10">
-                <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-full bg-[#333] border-2 border-[#d4a843] flex items-center justify-center overflow-hidden">
-                        {user.photoURL ? (
-                            <img src={user.photoURL} alt="profile" className="w-full h-full object-cover" />
-                        ) : (
-                            <span className="text-2xl">👤</span>
-                        )}
+        <>
+        <div className="pt-[5.5rem] pb-20 px-4 sm:px-6 animate-fade-in-up w-full overflow-x-hidden box-border">
+ 
+            {/* User Profile Header */}
+            <section className="flex flex-col items-center gap-3 mb-6">
+                <div className="relative group">
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full p-0.5 bg-gradient-to-tr from-primary via-primary/50 to-transparent shadow-[0_0_30px_rgba(255,198,62,0.1)]">
+                        <div className="w-full h-full rounded-full overflow-hidden border-[3px] border-background bg-surface-container flex items-center justify-center">
+                            {user.photoURL ? (
+                                <img src={user.photoURL} alt={user.displayName || "Profile"} className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="material-symbols-outlined text-on-surface-variant/40 text-4xl" style={{ fontVariationSettings: "'FILL' 1, 'wght' 200, 'GRAD' 0, 'opsz' 24" }}>person</span>
+                            )}
+                        </div>
                     </div>
-                    <div>
-                        <h2 className="text-xl font-bold text-[#f0ede8]">
-                            {user.displayName || "Home Bartender"}
-                        </h2>
-                        <p className="text-xs text-[#a8a49d]">{user.email}</p>
+                    <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-primary text-black text-[8px] font-black px-2.5 py-0.5 rounded-full tracking-[0.2em] uppercase shadow-lg">
+                        MEMBER
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setIsVersionModalOpen(true)}
-                        className="p-2 rounded-lg bg-[#333] text-[#a8a49d] hover:text-[#f0ede8] transition-colors"
-                        title="버전 정보"
-                    >
-                        <Settings className="w-5 h-5" />
-                    </button>
-                    <button
-                        onClick={handleLogout}
-                        className="p-2 rounded-lg bg-[#333] text-red-400 hover:text-red-300 transition-colors"
-                        title="로그아웃"
-                    >
-                        <LogOut className="w-5 h-5" />
-                    </button>
+                <div className="text-center">
+                    <h2 className="text-xl sm:text-2xl font-headline font-bold text-on-surface tracking-tight">{user.displayName || "Home Bartender"}</h2>
+                    <p className="text-on-surface-variant/50 text-[10px] font-medium tracking-widest uppercase">{user.email}</p>
                 </div>
-            </div>
+            </section>
 
             {error && (
                 <div className="mb-6">
@@ -285,39 +377,39 @@ export default function MyPage() {
                 </div>
             )}
 
-            {/* Removed Global Tabs */}
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Column: Shopping List */}
-                <div className="lg:col-span-1 border border-white/5 rounded-2xl bg-[#2a2a2a]/50 p-6 flex flex-col">
-                    <div className="flex flex-col gap-4 mb-6">
-                        <div className="flex items-center gap-2">
-                            <ShoppingCart className="w-5 h-5 text-[#d4a843]" />
-                            <h3 className="text-lg font-bold text-[#f0ede8]">장보기 목록</h3>
+            {/* Main Application Sections */}
+            <div className="flex flex-col gap-4 mb-6">
+                {/* Shopping List Collection */}
+                <div className="border border-outline-variant/5 rounded-3xl bg-surface-container-low p-5 flex flex-col shadow-xl shadow-black/40">
+                    <div className="flex flex-col gap-3 mb-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-headline font-black text-on-surface-variant/60 uppercase tracking-[0.2em]">Shopping List</span>
+                            </div>
                         </div>
-
-                        {/* Shopping Tabs (Unified Style) */}
-                        <div className="flex gap-1 bg-[#1a1a1a] p-1.5 rounded-2xl border border-white/5 w-full">
+ 
+                        {/* Shopping Tabs (Pill Style) */}
+                        <div className="flex gap-1.5 w-full overflow-x-auto no-scrollbar">
                             <button
                                 onClick={() => setActiveShoppingTab("base")}
-                                className={`flex-1 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${activeShoppingTab === "base" ? "bg-[#d4a843] text-black shadow-lg shadow-[#d4a843]/10" : "text-[#6b6761] hover:text-[#a8a49d]"}`}
+                                className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-2 shrink-0 ${activeShoppingTab === "base" ? "bg-primary/20 border border-primary/40 text-primary" : "bg-surface-variant/10 border border-outline-variant/5 text-on-surface-variant hover:text-primary"}`}
                             >
                                 <Beaker className="w-3 h-3" />
-                                술 {shoppingCounts.base > 0 && `(${shoppingCounts.base})`}
+                                Base {shoppingCounts.base > 0 && `(${shoppingCounts.base})`}
                             </button>
                             <button
                                 onClick={() => setActiveShoppingTab("liqueur")}
-                                className={`flex-1 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${activeShoppingTab === "liqueur" ? "bg-[#d4a843] text-black shadow-lg shadow-[#d4a843]/10" : "text-[#6b6761] hover:text-[#a8a49d]"}`}
+                                className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-2 shrink-0 ${activeShoppingTab === "liqueur" ? "bg-primary/20 border border-primary/40 text-primary" : "bg-surface-variant/10 border border-outline-variant/5 text-on-surface-variant hover:text-primary"}`}
                             >
                                 <Wine className="w-3 h-3" />
-                                리큐르 {shoppingCounts.liqueur > 0 && `(${shoppingCounts.liqueur})`}
+                                Liqueur {shoppingCounts.liqueur > 0 && `(${shoppingCounts.liqueur})`}
                             </button>
                             <button
                                 onClick={() => setActiveShoppingTab("ingredient")}
-                                className={`flex-1 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${activeShoppingTab === "ingredient" ? "bg-[#d4a843] text-black shadow-lg shadow-[#d4a843]/10" : "text-[#6b6761] hover:text-[#a8a49d]"}`}
+                                className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-2 shrink-0 ${activeShoppingTab === "ingredient" ? "bg-primary/20 border border-primary/40 text-primary" : "bg-surface-variant/10 border border-outline-variant/5 text-on-surface-variant hover:text-primary"}`}
                             >
                                 <Droplets className="w-3 h-3" />
-                                재료 {shoppingCounts.ingredient > 0 && `(${shoppingCounts.ingredient})`}
+                                Others {shoppingCounts.ingredient > 0 && `(${shoppingCounts.ingredient})`}
                             </button>
                         </div>
                     </div>
@@ -333,51 +425,54 @@ export default function MyPage() {
                                 이 카테고리에 필터링된<br />재료가 없습니다.
                             </div>
                         ) : (
-                            <ul className="space-y-3">
+                            <ul className="space-y-2">
                                 {filteredShoppingList.map((item: string, idx: number) => {
                                     const itemCat = categorize(item);
                                     return (
-                                        <li key={idx} className="flex flex-col gap-2 p-3 bg-[#1a1a1a] rounded-xl border border-white/5 group hover:border-[#d4a843]/30 transition-colors">
+                                        <li key={idx} className="flex flex-col gap-3 p-4 bg-surface-container rounded-2xl border border-outline-variant/10 group hover:border-primary/30 transition-all duration-300">
                                             <div className="flex items-center justify-between">
-                                                <span className="text-sm text-[#f0ede8] font-medium">{item}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-primary/40 group-hover:bg-primary transition-colors" />
+                                                    <span className="text-sm text-on-surface font-headline font-bold">{item}</span>
+                                                </div>
                                                 <button
                                                     onClick={() => removeItem(item)}
-                                                    className="text-[#6b6761] hover:text-red-400 transition-colors p-1"
+                                                    className="text-on-surface-variant/40 hover:text-red-400 transition-colors p-1.5 rounded-lg hover:bg-red-500/10"
                                                     title="구매 완료 / 삭제"
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
                                                 </button>
                                             </div>
-
-                                            <div className="flex flex-wrap gap-1.5 mt-1 border-t border-white/5 pt-2">
+ 
+                                            <div className="flex flex-wrap gap-2 mt-1 border-t border-outline-variant/5 pt-3">
                                                 {itemCat !== "ingredient" ? (
                                                     <>
                                                         <a
                                                             href={`https://dailyshot.co/m/search/result?q=${encodeURIComponent(item)}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="text-[9px] px-2 py-1 rounded-md bg-[#2a2a2a] text-[#a8a49d] hover:bg-[#d4a843] hover:text-black transition-all flex items-center gap-1"
+                                                            className="text-[9px] px-3 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant hover:bg-primary hover:text-black font-bold tracking-widest uppercase transition-all flex items-center gap-1.5 border border-outline-variant/10"
                                                         >
-                                                            데일리샷
-                                                            <ExternalLink className="w-2 h-2" />
+                                                            Daily Shot
+                                                            <ExternalLink className="w-2.5 h-2.5" />
                                                         </a>
                                                         <a
                                                             href={`https://with.gsshop.com/shop/wine/search.gs?tq=${encodeURIComponent(item)}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="text-[9px] px-2 py-1 rounded-md bg-[#2a2a2a] text-[#a8a49d] hover:bg-[#d4a843] hover:text-black transition-all flex items-center gap-1"
+                                                            className="text-[9px] px-3 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant hover:bg-primary hover:text-black font-bold tracking-widest uppercase transition-all flex items-center gap-1.5 border border-outline-variant/10"
                                                         >
-                                                            GS25
-                                                            <ExternalLink className="w-2 h-2" />
+                                                            GS25 Wine
+                                                            <ExternalLink className="w-2.5 h-2.5" />
                                                         </a>
                                                         <a
                                                             href={`https://search.shopping.naver.com/search/all?query=${encodeURIComponent(item)}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="text-[9px] px-2 py-1 rounded-md bg-[#2a2a2a] text-[#a8a49d] hover:bg-[#d4a843] hover:text-black transition-all flex items-center gap-1"
+                                                            className="text-[9px] px-3 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant hover:bg-primary hover:text-black font-bold tracking-widest uppercase transition-all flex items-center gap-1.5 border border-outline-variant/10"
                                                         >
-                                                            네이버
-                                                            <ExternalLink className="w-2 h-2" />
+                                                            Naver
+                                                            <ExternalLink className="w-2.5 h-2.5" />
                                                         </a>
                                                     </>
                                                 ) : (
@@ -386,37 +481,28 @@ export default function MyPage() {
                                                             href={`https://www.coupang.com/np/search?q=${encodeURIComponent(item)}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="text-[9px] px-2 py-1 rounded-md bg-[#2a2a2a] text-[#a8a49d] hover:bg-[#d4a843] hover:text-black transition-all flex items-center gap-1"
+                                                            className="text-[9px] px-3 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant hover:bg-primary hover:text-black font-bold tracking-widest uppercase transition-all flex items-center gap-1.5 border border-outline-variant/10"
                                                         >
-                                                            쿠팡
-                                                            <ExternalLink className="w-2 h-2" />
+                                                            Coupang
+                                                            <ExternalLink className="w-2.5 h-2.5" />
                                                         </a>
                                                         <a
                                                             href={`https://search.shopping.naver.com/search/all?query=${encodeURIComponent(item)}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="text-[9px] px-2 py-1 rounded-md bg-[#2a2a2a] text-[#a8a49d] hover:bg-[#d4a843] hover:text-black transition-all flex items-center gap-1"
+                                                            className="text-[9px] px-3 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant hover:bg-primary hover:text-black font-bold tracking-widest uppercase transition-all flex items-center gap-1.5 border border-outline-variant/10"
                                                         >
-                                                            네이버
-                                                            <ExternalLink className="w-2 h-2" />
-                                                        </a>
-                                                        <a
-                                                            href={`https://with.gsshop.com/shop/search/main.gs?tq=${encodeURIComponent(item)}`}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-[9px] px-2 py-1 rounded-md bg-[#2a2a2a] text-[#a8a49d] hover:bg-[#d4a843] hover:text-black transition-all flex items-center gap-1"
-                                                        >
-                                                            GS25
-                                                            <ExternalLink className="w-2 h-2" />
+                                                            Naver
+                                                            <ExternalLink className="w-2.5 h-2.5" />
                                                         </a>
                                                         <a
                                                             href={`https://ehomebar.co.kr/product/search.html?keyword=${encodeURIComponent(item)}`}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            className="text-[9px] px-2 py-1 rounded-md bg-[#2a2a2a] text-[#a8a49d] hover:bg-[#d4a843] hover:text-black transition-all flex items-center gap-1"
+                                                            className="text-[9px] px-3 py-1.5 rounded-full bg-surface-container-high text-on-surface-variant hover:bg-primary hover:text-black font-bold tracking-widest uppercase transition-all flex items-center gap-1.5 border border-outline-variant/10"
                                                         >
-                                                            이홈바
-                                                            <ExternalLink className="w-2 h-2" />
+                                                            E-Homebar
+                                                            <ExternalLink className="w-2.5 h-2.5" />
                                                         </a>
                                                     </>
                                                 )}
@@ -429,51 +515,49 @@ export default function MyPage() {
                     </div>
                 </div>
 
-                {/* Right Column: Full Inventory */}
-                <div className="lg:col-span-2">
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 bg-[#2a2a2a]/30 p-4 rounded-2xl border border-white/5">
-                        <div className="flex-1 w-full">
-                            <h3 className="text-lg font-bold text-[#f0ede8] flex items-center gap-2 mb-3">
-                                {activeInventoryTab === "base" ? "베이스 기주" : activeInventoryTab === "liqueur" ? "리큐르 컬렉션" : "부재료 및 가니쉬"}
-                            </h3>
-
-                            {/* Inventory Tabs (Unified Style) */}
-                            <div className="flex gap-1 bg-[#1a1a1a] p-1.5 rounded-2xl border border-white/5 w-full sm:w-fit">
-                                <button
-                                    onClick={() => setActiveInventoryTab("base")}
-                                    className={`px-5 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center gap-2 ${activeInventoryTab === "base" ? "bg-[#d4a843] text-black shadow-lg shadow-[#d4a843]/10" : "text-[#6b6761] hover:text-[#a8a49d]"}`}
-                                >
-                                    <Beaker className="w-3.5 h-3.5" />
-                                    술 {inventoryCounts.base > 0 && `(${inventoryCounts.base})`}
-                                </button>
-                                <button
-                                    onClick={() => setActiveInventoryTab("liqueur")}
-                                    className={`px-5 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center gap-2 ${activeInventoryTab === "liqueur" ? "bg-[#d4a843] text-black shadow-lg shadow-[#d4a843]/10" : "text-[#6b6761] hover:text-[#a8a49d]"}`}
-                                >
-                                    <Wine className="w-3.5 h-3.5" />
-                                    리큐르 {inventoryCounts.liqueur > 0 && `(${inventoryCounts.liqueur})`}
-                                </button>
-                                <button
-                                    onClick={() => setActiveInventoryTab("ingredient")}
-                                    className={`px-5 py-2 rounded-xl text-[11px] font-bold transition-all flex items-center gap-2 ${activeInventoryTab === "ingredient" ? "bg-[#d4a843] text-black shadow-lg shadow-[#d4a843]/10" : "text-[#6b6761] hover:text-[#a8a49d]"}`}
-                                >
-                                    <Droplets className="w-3.5 h-3.5" />
-                                    재료 {inventoryCounts.ingredient > 0 && `(${inventoryCounts.ingredient})`}
-                                </button>
-                            </div>
-                        </div>
-                        <div className="flex items-center justify-between w-full sm:w-auto gap-4 shrink-0">
+                {/* Full Inventory Collection */}
+                <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-3 mb-1">
+                        <div className="flex items-center justify-between px-1">
+                            <span className="text-[10px] font-headline font-black text-on-surface-variant/60 uppercase tracking-[0.2em]">
+                                {activeInventoryTab === "base" ? "Base Collection" : activeInventoryTab === "liqueur" ? "Liqueur Collection" : "Other Ingredients"}
+                            </span>
                             <button
                                 onClick={() => setIsAddModalOpen(true)}
-                                className="bg-[#d4a843] hover:bg-[#c29738] text-[#1a1a1a] px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-[#d4a843]/20 flex items-center gap-2 w-full sm:w-auto justify-center"
+                                className="bg-primary hover:bg-primary/90 text-black px-3 py-1.5 rounded-lg text-[9px] font-bold tracking-widest uppercase transition-all shadow-lg shadow-primary/20 flex items-center gap-1.5"
                             >
-                                <Plus className="w-4 h-4" />
-                                재고 추가
+                                <Plus className="w-2.5 h-2.5 stroke-[4]" />
+                                Add New
+                            </button>
+                        </div>
+ 
+                        {/* Inventory Tabs (Pill Style) */}
+                        <div className="flex gap-1.5 w-full overflow-x-auto no-scrollbar">
+                            <button
+                                onClick={() => setActiveInventoryTab("base")}
+                                className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-2 shrink-0 ${activeInventoryTab === "base" ? "bg-primary/20 border border-primary/40 text-primary" : "bg-surface-variant/10 border border-outline-variant/5 text-on-surface-variant hover:text-primary"}`}
+                            >
+                                <Beaker className="w-3 h-3" />
+                                Base {inventoryCounts.base > 0 && `(${inventoryCounts.base})`}
+                            </button>
+                            <button
+                                onClick={() => setActiveInventoryTab("liqueur")}
+                                className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-2 shrink-0 ${activeInventoryTab === "liqueur" ? "bg-primary/20 border border-primary/40 text-primary" : "bg-surface-variant/10 border border-outline-variant/5 text-on-surface-variant hover:text-primary"}`}
+                            >
+                                <Wine className="w-3 h-3" />
+                                Liqueur {inventoryCounts.liqueur > 0 && `(${inventoryCounts.liqueur})`}
+                            </button>
+                            <button
+                                onClick={() => setActiveInventoryTab("ingredient")}
+                                className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase tracking-widest transition-all duration-300 flex items-center gap-2 shrink-0 ${activeInventoryTab === "ingredient" ? "bg-primary/20 border border-primary/40 text-primary" : "bg-surface-variant/10 border border-outline-variant/5 text-on-surface-variant hover:text-primary"}`}
+                            >
+                                <Droplets className="w-3 h-3" />
+                                Others {inventoryCounts.ingredient > 0 && `(${inventoryCounts.ingredient})`}
                             </button>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-3">
                         {loading ? (
                             Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
                         ) : filteredInventory.length > 0 ? (
@@ -497,112 +581,150 @@ export default function MyPage() {
                 </div>
             </div>
 
-            {/* Add/Edit Inventory Modal */}
-            {(isAddModalOpen || editingItem) && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="w-full max-w-md bg-[#1a1a1a] rounded-3xl border border-white/10 p-8 animate-fade-in-up relative overflow-hidden">
-                        {/* Background Decoration */}
-                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#d4a843]/10 blur-[80px] rounded-full" />
+            {/* Settings List */}
+            <section className="bg-surface-container-low rounded-3xl overflow-hidden border border-outline-variant/10 mt-8 mb-8 shadow-xl shadow-black/40">
+                <div className="p-6 border-b border-outline-variant/5">
+                    <h4 className="text-[10px] uppercase tracking-[0.2em] font-black text-on-surface-variant/50">Management</h4>
+                </div>
+                <div className="divide-y divide-outline-variant/5 flex flex-col">
+                    <button onClick={() => { setNewName(user?.displayName || ""); setIsAccountModalOpen(true); }} className="w-full flex items-center justify-between p-6 hover:bg-surface-container transition-all duration-300 group">
+                        <div className="flex items-center gap-5">
+                            <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                                <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24" }}>manage_accounts</span>
+                            </div>
+                            <span className="font-headline font-bold text-base text-on-surface group-hover:text-primary transition-colors">Account Settings</span>
+                        </div>
+                        <span className="material-symbols-outlined text-on-surface-variant/30 group-hover:text-primary transition-colors">chevron_right</span>
+                    </button>
+                    <button onClick={() => setIsPreferencesModalOpen(true)} className="w-full flex items-center justify-between p-6 hover:bg-surface-container transition-all duration-300 group">
+                        <div className="flex items-center gap-5">
+                            <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                                <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24" }}>tune</span>
+                            </div>
+                            <span className="font-headline font-bold text-base text-on-surface group-hover:text-primary transition-colors">Preferences</span>
+                        </div>
+                        <span className="material-symbols-outlined text-on-surface-variant/30 group-hover:text-primary transition-colors">chevron_right</span>
+                    </button>
+                    <button onClick={() => setIsVersionModalOpen(true)} className="w-full flex items-center justify-between p-6 hover:bg-surface-container transition-all duration-300 group">
+                        <div className="flex items-center gap-5">
+                            <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                                <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24" }}>info</span>
+                            </div>
+                            <span className="font-headline font-bold text-base text-on-surface group-hover:text-primary transition-colors">App Info</span>
+                        </div>
+                        <span className="material-symbols-outlined text-on-surface-variant/30 group-hover:text-primary transition-colors">chevron_right</span>
+                    </button>
+                    <button onClick={handleLogout} className="w-full flex items-center justify-between p-6 hover:bg-red-500/[0.03] transition-all duration-300 group">
+                        <div className="flex items-center gap-5">
+                            <div className="w-10 h-10 rounded-xl bg-red-500/5 flex items-center justify-center group-hover:bg-red-500/20 transition-colors">
+                                <span className="material-symbols-outlined text-red-400" style={{ fontVariationSettings: "'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24" }}>logout</span>
+                            </div>
+                            <span className="font-headline font-bold text-base text-red-400">Logout</span>
+                        </div>
+                    </button>
+                </div>
+            </section>
+        </div>
 
-                        <div className="flex justify-between items-center mb-6 relative z-10">
-                            <h3 className="text-xl font-bold gold-text">
-                                {editingItem ? "재고 정보 수정" : "새로운 재고 추가"}
+            {/* Add/Edit Inventory Modal (Placed outside transformed container to fix viewport positioning) */}
+            {(isAddModalOpen || editingItem) && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#0a0a0a]/80 backdrop-blur-2xl animate-fade-in" onClick={() => { setIsAddModalOpen(false); setEditingItem(null); setFormData({ name: "", abv: 40, volume: 700, category: "위스키" }); }}>
+                    <div className="w-full max-w-sm bg-[#131110] rounded-[2.5rem] border border-outline-variant/10 p-5 sm:p-6 shadow-2xl relative overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="absolute -top-32 -right-32 w-64 h-64 bg-primary/10 blur-[100px] rounded-full mix-blend-screen pointer-events-none" />
+                        <div className="absolute -bottom-32 -left-32 w-64 h-64 bg-primary/10 blur-[100px] rounded-full mix-blend-screen pointer-events-none" />
+                        
+                        <div className="flex justify-between items-center mb-6 relative z-10 border-b border-primary/20 pb-4">
+                            <h3 className="text-2xl font-headline italic font-bold text-primary tracking-tighter">
+                                {editingItem ? "Refine Spirit" : "Curate Selection"}
                             </h3>
                             <button
-                                onClick={() => {
-                                    setIsAddModalOpen(false);
-                                    setEditingItem(null);
-                                }}
-                                className="p-1 rounded-full hover:bg-white/5 transition-colors"
+                                onClick={() => { setIsAddModalOpen(false); setEditingItem(null); setFormData({ name: "", abv: 40, volume: 700, category: "위스키" }); }}
+                                className="p-2 rounded-full hover:bg-white/5 transition-colors border border-outline-variant/10 bg-surface-container-low"
                             >
-                                <X className="w-6 h-6 text-[#6b6761]" />
+                                <X className="w-4 h-4 text-on-surface-variant" />
                             </button>
                         </div>
+ 
+                        <form onSubmit={handleFormSubmit} className="space-y-4 relative z-10 max-h-[85vh] overflow-y-auto custom-scrollbar pr-1">
+                            {/* 1. 카테고리 (Category) */}
+                            <div className="bg-surface-container-low/30 backdrop-blur-sm p-4 rounded-3xl border border-outline-variant/10 leading-none">
+                                <label className="block text-[9px] text-primary uppercase tracking-[0.3em] font-black px-1 mb-2.5">Category</label>
+                                <div className="relative group">
+                                    <select
+                                        value={formData.category}
+                                        onChange={(e) => {
+                                            const newCat = e.target.value;
+                                            const zeroAbvCategories = ["과일", "주스", "시럽", "가루", "기타"];
+                                            const isZeroAbv = zeroAbvCategories.some(c => newCat.includes(c));
+                                            setFormData({ ...formData, category: newCat, abv: isZeroAbv ? 0 : formData.abv });
+                                        }}
+                                        className="w-full bg-transparent border-b border-outline-variant/20 focus:border-primary focus:ring-0 text-on-surface py-2 px-1 transition-all outline-none appearance-none cursor-pointer text-sm font-medium"
+                                    >
+                                        <optgroup label="Spirits" className="bg-[#1a1a1a] text-on-surface">
+                                            {categoryOptions
+                                                .filter(opt => CATEGORIES.base.includes(opt.value))
+                                                .map(opt => (
+                                                    <option key={opt.id} value={opt.value}>{opt.value}</option>
+                                                ))}
+                                        </optgroup>
+                                        <optgroup label="Liqueur" className="bg-[#1a1a1a] text-on-surface">
+                                            {categoryOptions
+                                                .filter(opt => CATEGORIES.liqueur.includes(opt.value))
+                                                .map(opt => (
+                                                    <option key={opt.id} value={opt.value}>{opt.value}</option>
+                                                ))}
+                                        </optgroup>
+                                        <optgroup label="Ingredients" className="bg-[#1a1a1a] text-on-surface">
+                                            {categoryOptions
+                                                .filter(opt => CATEGORIES.ingredient.includes(opt.value) || (!CATEGORIES.base.includes(opt.value) && !CATEGORIES.liqueur.includes(opt.value) && !CATEGORIES.ingredient.includes(opt.value)))
+                                                .map(opt => (
+                                                    <option key={opt.id} value={opt.value}>{opt.value}</option>
+                                                ))}
+                                        </optgroup>
+                                    </select>
+                                    <div className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant/40 group-hover:text-primary transition-colors">
+                                        <ChevronDown className="w-4 h-4" />
+                                    </div>
+                                </div>
+                            </div>
 
-                        <form onSubmit={handleFormSubmit} className="space-y-5 relative z-10">
-                            <div>
-                                <label className="block text-[10px] text-[#a8a49d] uppercase tracking-wider mb-2 ml-1">이름</label>
+                            {/* 2. 아이템 이름 (Item Name) */}
+                            <div className="bg-surface-container-low/30 backdrop-blur-sm p-4 rounded-3xl border border-outline-variant/10 leading-none">
+                                <label className="block text-[9px] text-primary uppercase tracking-[0.3em] font-black px-1 mb-2.5">Item Name</label>
                                 <input
                                     type="text"
                                     required
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder="예: 발렌타인 12년, 볼스 메론"
-                                    className="w-full bg-[#2a2a2a]/50 border border-white/10 rounded-xl py-3 px-4 text-[#f0ede8] focus:outline-none focus:border-[#d4a843]/50 transition-all placeholder:text-[#6b6761]"
+                                    placeholder="e.g. Ballantine's 12y, Hendricks Gin"
+                                    className="w-full bg-transparent border-b border-outline-variant/20 focus:border-primary focus:ring-0 text-on-surface py-2 px-1 transition-all duration-300 placeholder:text-on-surface-variant/30 outline-none text-sm font-medium"
                                 />
                             </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-[10px] text-[#a8a49d] uppercase tracking-wider mb-2 ml-1">도수 (ABV %)</label>
-                                    <input
-                                        type="number"
-                                        step="0.1"
-                                        disabled={formData.category.includes("과일") || formData.category.includes("주스") || formData.category.includes("시럽")}
-                                        value={formData.abv}
-                                        onChange={(e) => setFormData({ ...formData, abv: Number(e.target.value) })}
-                                        className={`w-full bg-[#2a2a2a]/50 border border-white/10 rounded-xl py-3 px-4 text-[#f0ede8] focus:outline-none focus:border-[#d4a843]/50 transition-all ${(formData.category.includes("과일") || formData.category.includes("주스") || formData.category.includes("시럽")) ? "opacity-30" : ""}`}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] text-[#a8a49d] uppercase tracking-wider mb-2 ml-1">용량 (ml / 개)</label>
-                                    <input
-                                        type="number"
-                                        value={formData.volume}
-                                        onChange={(e) => setFormData({ ...formData, volume: Number(e.target.value) })}
-                                        className="w-full bg-[#2a2a2a]/50 border border-white/10 rounded-xl py-3 px-4 text-[#f0ede8] focus:outline-none focus:border-[#d4a843]/50 transition-all"
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-[10px] text-[#a8a49d] uppercase tracking-wider mb-2 ml-1">카테고리</label>
-                                <div className="relative">
-                                    <select
-                                        value={formData.category}
-                                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                                        className="w-full bg-[#2a2a2a]/50 border border-white/10 rounded-xl py-3 px-4 text-[#f0ede8] focus:outline-none focus:border-[#d4a843]/50 transition-all appearance-none pr-10"
-                                    >
-                                        <optgroup label="술 (Base 기주)" className="bg-[#1a1a1a] text-[#a8a49d]">
-                                            {categoryOptions
-                                                .filter(opt => CATEGORIES.base.includes(opt.value))
-                                                .map(opt => (
-                                                    <option key={opt.id} value={opt.value} className="text-[#f0ede8]">{opt.value}</option>
-                                                ))}
-                                        </optgroup>
-                                        <optgroup label="리큐르 (Liqueur)" className="bg-[#1a1a1a] text-[#a8a49d]">
-                                            {categoryOptions
-                                                .filter(opt => CATEGORIES.liqueur.includes(opt.value))
-                                                .map(opt => (
-                                                    <option key={opt.id} value={opt.value} className="text-[#f0ede8]">{opt.value}</option>
-                                                ))}
-                                        </optgroup>
-                                        <optgroup label="부재료 (Ingredient)" className="bg-[#1a1a1a] text-[#a8a49d]">
-                                            {categoryOptions
-                                                .filter(opt => CATEGORIES.ingredient.includes(opt.value) || (!CATEGORIES.base.includes(opt.value) && !CATEGORIES.liqueur.includes(opt.value) && !CATEGORIES.ingredient.includes(opt.value)))
-                                                .map(opt => (
-                                                    <option key={opt.id} value={opt.value} className="text-[#f0ede8]">{opt.value}</option>
-                                                ))}
-                                        </optgroup>
-                                    </select>
-                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                                        <ChevronDown className="w-4 h-4 text-[#6b6761]" />
-                                    </div>
-                                </div>
-
+ 
+                            {/* 병 모양의 인터랙티브 보틀 슬라이더 (좌우 정보 통합) */}
+                            <div className="bg-surface-container-low/20 backdrop-blur-sm p-2 py-4 sm:p-4 sm:pt-6 rounded-[2.5rem] border border-outline-variant/10 shadow-inner mt-2 overflow-hidden relative group">
+                                <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+                                <BottleVolumeSlider
+                                    value={formData.volume}
+                                    onChange={(val) => setFormData({ ...formData, volume: val })}
+                                    abvValue={formData.abv}
+                                    onAbvChange={(val) => setFormData({ ...formData, abv: val })}
+                                    maxVolume={1000}
+                                    abvReadOnly={["과일","주스","시럽","가루","소다","기타"].some(c => formData.category.includes(c))}
+                                />
                             </div>
 
                             <button
                                 type="submit"
                                 disabled={isSubmitting}
-                                className="w-full bg-[#d4a843] hover:bg-[#c29738] text-black py-4 rounded-2xl font-bold transition-all shadow-xl shadow-[#d4a843]/20 mt-4 disabled:opacity-50 flex items-center justify-center gap-2"
+                                className="w-full bg-primary hover:bg-primary/95 hover:scale-[1.02] text-[#1a1a1a] py-4 rounded-[1.5rem] font-label font-black tracking-[0.2em] uppercase transition-all shadow-xl shadow-primary/20 mt-8 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-3 active:scale-[0.98] border border-primary-fixed"
                             >
                                 {isSubmitting ? (
-                                    <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                                    <div className="w-5 h-5 border-[3px] border-[#1a1a1a] border-t-transparent rounded-full animate-spin" />
                                 ) : (
                                     <>
-                                        <Check className="w-5 h-5" />
-                                        {editingItem ? "수정 완료" : "등록하기"}
+                                        <Check className="w-5 h-5 stroke-[3]" />
+                                        {editingItem ? "Refine Curated Item" : "Register Item"}
                                     </>
                                 )}
                             </button>
@@ -614,49 +736,149 @@ export default function MyPage() {
             {/* Version Info Modal */}
             {isVersionModalOpen && (
                 <div
-                    className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in"
                     onClick={() => setIsVersionModalOpen(false)}
                 >
                     <div
-                        className="w-full max-w-sm bg-[#1a1a1a] rounded-3xl border border-white/10 p-8 animate-fade-in-up relative overflow-hidden"
+                        className="w-full max-w-sm bg-surface-container-low rounded-[2rem] border border-outline-variant/10 p-8 shadow-2xl relative overflow-hidden"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="absolute -top-20 -right-20 w-40 h-40 bg-[#d4a843]/10 blur-[60px] rounded-full" />
-                        <div className="flex justify-between items-center mb-6 relative z-10">
+                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/10 blur-[80px] rounded-full" />
+                        <div className="flex justify-between items-center mb-8 relative z-10">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-2xl bg-[#d4a843]/20 flex items-center justify-center">
-                                    <Settings className="w-5 h-5 text-[#d4a843]" />
+                                <div className="w-10 h-10 rounded-2xl bg-primary/10 flex items-center justify-center">
+                                    <Settings className="w-5 h-5 text-primary" />
                                 </div>
-                                <h3 className="text-lg font-bold text-[#f0ede8]">앱 정보</h3>
+                                <h3 className="text-xl font-headline font-bold text-on-surface tracking-tight">App Info</h3>
                             </div>
                             <button
                                 onClick={() => setIsVersionModalOpen(false)}
-                                className="p-1 rounded-full hover:bg-white/5 transition-colors"
+                                className="p-2 rounded-full hover:bg-on-surface-variant/10 transition-colors"
                             >
-                                <X className="w-5 h-5 text-[#6b6761]" />
+                                <X className="w-5 h-5 text-on-surface-variant" />
                             </button>
                         </div>
-                        <div className="space-y-4 relative z-10">
-                            <div className="flex items-center justify-between py-3 border-b border-white/5">
-                                <span className="text-sm text-[#a8a49d]">앱 이름</span>
-                                <span className="text-sm font-bold text-[#f0ede8]">Bar Coder</span>
+                        <div className="space-y-2 relative z-10">
+                            <div className="flex items-center justify-between py-4 border-b border-outline-variant/5">
+                                <span className="text-[10px] uppercase tracking-[0.2em] font-black text-on-surface-variant/50">App Name</span>
+                                <span className="text-sm font-headline font-bold text-on-surface">Bar Coder</span>
                             </div>
-                            <div className="flex items-center justify-between py-3 border-b border-white/5">
-                                <span className="text-sm text-[#a8a49d]">버전 정보</span>
-                                <span className="text-sm font-bold text-[#d4a843]">1.0.1</span>
+                            <div className="flex items-center justify-between py-4 border-b border-outline-variant/5">
+                                <span className="text-[10px] uppercase tracking-[0.2em] font-black text-on-surface-variant/50">Version</span>
+                                <span className="text-sm font-bold text-primary">1.1.0_PRO</span>
                             </div>
-                            <div className="flex items-center justify-between py-3 border-b border-white/5">
-                                <span className="text-sm text-[#a8a49d]">AI 모델</span>
-                                <span className="text-sm font-bold text-[#f0ede8]">Gemini 2.5 Flash</span>
+                            <div className="flex items-center justify-between py-4 border-b border-outline-variant/5">
+                                <span className="text-[10px] uppercase tracking-[0.2em] font-black text-on-surface-variant/50">Core Engine</span>
+                                <span className="text-sm font-headline font-bold text-on-surface">Gemini 2.5 Pro</span>
                             </div>
-                            <div className="flex items-center justify-between py-3">
-                                <span className="text-sm text-[#a8a49d]">개발</span>
-                                <span className="text-sm font-bold text-[#f0ede8]">Home Bartender</span>
+                            <div className="flex items-center justify-between py-4">
+                                <span className="text-[10px] uppercase tracking-[0.2em] font-black text-on-surface-variant/50">Author</span>
+                                <span className="text-sm font-headline font-bold text-on-surface">Home Bartender</span>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
-        </div>
+
+            {/* Account Settings Modal */}
+            {isAccountModalOpen && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setIsAccountModalOpen(false)}>
+                    <div className="w-full max-w-sm bg-surface-container rounded-3xl border border-outline-variant/10 p-8 animate-fade-in-up relative overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-headline font-bold text-on-surface">Account Settings</h3>
+                            <button onClick={() => setIsAccountModalOpen(false)} className="p-1 rounded-full hover:bg-white/5"><X className="w-5 h-5 text-on-surface-variant" /></button>
+                        </div>
+                        <form onSubmit={handleUpdateProfile} className="space-y-6">
+                            {/* Profile Image Edit */}
+                            <div className="flex flex-col items-center gap-3">
+                                <div 
+                                    className="relative group cursor-pointer w-24 h-24 rounded-full overflow-hidden border-2 border-primary/30 hover:border-primary transition-colors"
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <div className="w-full h-full bg-surface-container-high flex items-center justify-center">
+                                        {(imagePreview || user?.photoURL) ? (
+                                            <img src={imagePreview || user?.photoURL || ""} alt="Profile Preview" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span className="material-symbols-outlined text-4xl text-on-surface-variant">person</span>
+                                        )}
+                                    </div>
+                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <span className="material-symbols-outlined text-white" style={{ fontVariationSettings: "'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24" }}>photo_camera</span>
+                                    </div>
+                                    <input 
+                                        type="file" 
+                                        ref={fileInputRef} 
+                                        className="hidden" 
+                                        accept="image/*" 
+                                        onChange={handleImageSelect} 
+                                    />
+                                </div>
+                                <span className="text-[10px] text-on-surface-variant/70 uppercase tracking-widest">Tap to change</span>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] text-on-surface-variant uppercase tracking-wider mb-2 ml-1 font-bold">Display Name</label>
+                                <input
+                                    type="text"
+                                    value={newName}
+                                    onChange={(e) => setNewName(e.target.value)}
+                                    placeholder="Enter your name"
+                                    className="w-full bg-background border border-outline-variant/20 rounded-xl py-3 px-4 text-on-surface focus:outline-none focus:border-primary/50 transition-all"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] text-on-surface-variant uppercase tracking-wider mb-2 ml-1 font-bold">Linked Email</label>
+                                <div className="w-full bg-surface-container-low border border-outline-variant/10 rounded-xl py-3 px-4 text-on-surface-variant/70 cursor-not-allowed text-sm">
+                                    {user?.email}
+                                </div>
+                            </div>
+                            <button 
+                                type="submit" 
+                                disabled={isUpdatingProfile || (!selectedImage && newName === user?.displayName)} 
+                                className="w-full bg-primary hover:bg-primary-fixed text-black py-3.5 rounded-xl font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                                {isUpdatingProfile ? (
+                                    <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    "Save Changes"
+                                )}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Preferences Modal */}
+            {isPreferencesModalOpen && (
+                <div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setIsPreferencesModalOpen(false)}>
+                    <div className="w-full max-w-sm bg-surface-container rounded-t-3xl sm:rounded-3xl border-t sm:border border-outline-variant/10 p-6 sm:p-8 animate-fade-in-up relative overflow-hidden pb-12 sm:pb-8" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-headline font-bold text-on-surface">Preferences</h3>
+                            <button onClick={() => setIsPreferencesModalOpen(false)} className="p-1 rounded-full hover:bg-white/5"><X className="w-5 h-5 text-on-surface-variant" /></button>
+                        </div>
+                        <div className="space-y-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-bold text-on-surface">Dark Mode</p>
+                                    <p className="text-[10px] text-on-surface-variant">Midnight Mixologist Theme</p>
+                                </div>
+                                <div className="w-10 h-6 bg-primary rounded-full relative opacity-50 cursor-not-allowed">
+                                    <div className="absolute right-1 top-1 w-4 h-4 rounded-full bg-black"></div>
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-bold text-on-surface">Push Notifications</p>
+                                    <p className="text-[10px] text-on-surface-variant">Receive daily cocktail recipes</p>
+                                </div>
+                                <div className="w-10 h-6 bg-surface border border-outline-variant/30 rounded-full relative cursor-pointer" onClick={() => alert("현재 기기에서는 푸시 알림을 지원하지 않습니다.")}>
+                                    <div className="absolute left-1 top-1 w-4 h-4 rounded-full bg-on-surface-variant"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 }

@@ -25,7 +25,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Google API Key is missing." }, { status: 500 });
         }
 
-        const model = process.env.GOOGLE_GEMINI_MODEL || "gemini-2.5-flash";
+        const model = process.env.GOOGLE_GEMINI_MODEL || "gemini-2.0-flash";
 
         let prompt = "";
 
@@ -35,8 +35,6 @@ export async function POST(req: Request) {
                 ? `보유 주류:\n${liquorList}\n\n`
                 : "";
 
-            // 주의: 이 템플릿 문자열 내의 들여쓰기는 AI에게 전달됩니다.
-            // 절대로 들여쓰기를 추가하지 마세요.
             prompt =
                 `당신은 전문 바텐더입니다. 안주와 어울리는 칵테일 2~3개를 추천해 주세요.
 
@@ -49,7 +47,8 @@ ${inventorySection}후보 레시피: ${recipeNames}
 ANSWER: (안주에 대한 짧고 위트있는 바텐더 멘트)
 
 COCKTAIL: (칵테일 이름)
-[제조 순서와 용량]: (1번 단계 내용)
+[제조 순서와 용량]:
+(1번 단계 내용)
 
 (2번 단계 내용)
 
@@ -62,22 +61,38 @@ COCKTAIL: (칵테일 이름)
 [편의점 추천]: (편의점에서 구할 수 있는 대안 또는 추천 안주)
 
 COCKTAIL: (두 번째 칵테일 이름)
-[제조 순서와 용량]: (1번 단계 내용)
+[제조 순서와 용량]:
+(1번 단계 내용)
 
 (2번 단계 내용)
 
 [대체제]: (대체 재료 팁)
 
 [편의점 추천]: (편의점에서 구할 수 있는 대안 또는 추천 안주)`;
+        } else if (searchMode === "food_recommendation") {
+            prompt = `당신은 전문 바텐더입니다. 사용자가 입력한 칵테일(${food})의 맛과 향의 특징을 분석하고, 이와 가장 잘 어울리는 안주 궁합을 2~3가지 추천해 주세요. 
+            
+추천에는 다음 내용이 포함되어야 합니다:
+1. 해당 칵테일의 특징 (짧게)
+2. 추천하는 일반 안주 요리
+3. 편의점에서 쉽게 구할 수 있는 최고의 안주 조합
+
+마크다운 없이 친절하고 위트 있는 대화체로 답변해 주세요.`;
         } else {
             prompt = `당신은 바텐더입니다. 안주(${food})와 어울리는 칵테일 하나를 마크다운 없이 대화체로 추천해 주세요.`;
         }
+
+        console.log("Chatbot Prompt Length:", prompt.length);
 
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
             {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Referer": "http://localhost:3000",
+                    "Origin": "http://localhost:3000"
+                },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
@@ -90,35 +105,40 @@ COCKTAIL: (두 번째 칵테일 이름)
 
         const data = await response.json();
 
-        if (data.error) {
-            console.error("Gemini API Error:", JSON.stringify(data.error));
-            return NextResponse.json({ error: `API 오류: ${data.error.message}` }, { status: 500 });
+        if (!response.ok) {
+            console.error(`[Gemini API Error] Status: ${response.status}`, JSON.stringify(data));
+            return NextResponse.json({ 
+                error: `API Call Failed (${response.status})`,
+                details: data.error?.message || "Check server logs"
+            }, { status: 500 });
         }
 
         const rawText: string = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         if (!rawText) {
-            console.error("Gemini 빈 응답:", JSON.stringify(data));
-            return NextResponse.json({ error: "AI가 응답을 생성하지 못했습니다. 다시 시도해 주세요." }, { status: 500 });
+            console.error("[Gemini API Empty Response]", JSON.stringify(data));
+            return NextResponse.json({ error: "AI 응답 생성 실패 (Empty)" }, { status: 500 });
         }
 
         // 마크다운 기호 제거
         const cleanText = rawText.replace(/\*\*|###|---|`/g, "").trim();
 
         if (searchMode === "all" || searchMode === "inventory") {
+            // ... (생략된 기존 파싱 로직)
             // 1. ANSWER: 부분 추출
             const answerMatch = cleanText.match(/ANSWER:\s*([\s\S]*?)(?=COCKTAIL:|$)/i);
-            const answer = answerMatch ? answerMatch[1].trim() : "칵테일 추천 결과를 확인해 보세요!";
+            const answer = answerMatch ? answerMatch[1].trim() : "추천 결과를 확인해 보세요!";
 
-            // 2. 각 COCKTAIL: 블록 추출
             const cocktailBlocks = cleanText.split(/COCKTAIL:\s*/i).slice(1);
-
             const recommendations = cocktailBlocks.map((block) => {
                 const lines = block.split("\n");
                 const name = lines[0].trim();
                 const detail = lines.slice(1).join("\n").trim();
-
-                // 단일 줄바꿈을 이중 줄바꿈으로 보정 (AI 불일치 대응)
-                const fixedDetail = detail.replace(/([^\n])\n([^\n])/g, "$1\n\n$2");
+                // 텍스트 보정: 라벨 뒤에 즉시 내용이 다음 줄에 오도록 (\n 하나만)
+                const fixedDetail = detail
+                    .replace(/\[제조 순서와 용량\]:\s*/i, "[제조 순서와 용량]:\n")
+                    .replace(/\[대체제\]:\s*/i, "[대체제]:\n")
+                    .replace(/\[편의점 추천\]:\s*/i, "[편의점 추천]:\n")
+                    .trim();
 
                 return { name, detail: fixedDetail };
             }).filter(r => r.name.length > 0);
@@ -129,7 +149,10 @@ COCKTAIL: (두 번째 칵테일 이름)
         return NextResponse.json({ answer: cleanText });
 
     } catch (error: any) {
-        console.error("Chatbot API Error:", error);
-        return NextResponse.json({ error: "서버 내부 오류가 발생했습니다." }, { status: 500 });
+        console.error("[Chatbot API Critical Error]", error.stack || error);
+        return NextResponse.json({ 
+            error: "서버 내부 오류", 
+            message: error.message 
+        }, { status: 500 });
     }
 }

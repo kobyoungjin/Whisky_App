@@ -2,7 +2,6 @@
 
 import React, { useMemo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, CheckCircle2, XCircle, ShoppingCart } from "lucide-react";
 import { RecipeItem, InventoryItem } from "@/types/baserow";
 import { useShoppingList } from "@/hooks/useShoppingList";
 import { isIngredientMatched } from "@/lib/substitute";
@@ -34,8 +33,6 @@ export default function CocktailDetailModal({
         } else {
             document.body.style.overflow = "unset";
         }
-
-        // Cleanup function for unmount
         return () => {
             document.body.style.overflow = "unset";
         };
@@ -44,37 +41,36 @@ export default function CocktailDetailModal({
     // 재료 파싱 및 보유 여부 계산
     const parsedIngredients = useMemo(() => {
         if (!cocktail?.ingredients) return [];
-        // 예: "위스키 (45ml), 스위트 베르무트 (30ml)"
-        // 단순 줄바꿈이나 쉼표로 분리되어 있다고 가정. 필요에 따라 정규식/split 로직 고도화 가능
         const reqs = cocktail.ingredients.split(/[,;\n]/).map(r => r.trim()).filter(Boolean);
 
         return reqs.map((reqInfo) => {
-            // 이름 추출 (괄호 전까지를 보통 재료 이름으로 봄, 이 규칙은 데이터 형식에 따라 다름)
-            const baseName = reqInfo.split('(')[0].trim().toLowerCase();
+            // 용량 및 단위 제거 로직 (substitute.ts와 동기화)
+            const baseName = reqInfo
+                .replace(/\d+(\.\d+)?\s*(ml|oz|cl|tsp|tbsp|dash|drop|g|쪽|개|적|조금|약간|to\s+taste)/gi, "") // 단위 제거
+                .replace(/^\d+\s*/, "") // 앞의 숫자 제거
+                .split('(')[0] // 괄호 뒤 메모 제거
+                .trim()
+                .toLowerCase();
 
-            // 엄격한 매치 알고리즘(Strict Liqueur Matching)을 통해 확인
             const hasStock = inventory.some((item) => isIngredientMatched(baseName, item));
-
             return {
                 rawText: reqInfo,
-                nameForShopping: baseName, // 장바구니 추가용 이름
+                nameForShopping: baseName,
                 hasStock,
             };
         });
     }, [cocktail, inventory]);
 
-    // Garnish (JSON Parsing) Logic
+    // Garnish / Substitutes Logic
     const parsedSubstitutes = useMemo(() => {
         if (!cocktail?.substitutes) return null;
         try {
-            // Attempt to parse JSON
             const parsed = JSON.parse(cocktail.substitutes);
             const garnishText = parsed.garnish?.trim();
-            return garnishText ? garnishText : "없음";
+            return garnishText ? garnishText : null;
         } catch (e) {
-            // If not valid JSON, treat as raw text
             const rawText = cocktail.substitutes.trim();
-            return rawText ? rawText : "없음";
+            return rawText ? rawText : null;
         }
     }, [cocktail?.substitutes]);
 
@@ -84,156 +80,229 @@ export default function CocktailDetailModal({
         if (e.target === e.currentTarget) onClose();
     };
 
+    // Baserow 데이터에서 직접 가져오기
+    const abv = cocktail.abv ? `${cocktail.abv}` : null;
+    const glassType = cocktail.glass || null;
+    const makeMethod = cocktail.make || cocktail.technique || null;
+
     return createPortal(
         <div
-            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity"
+            className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-md transition-opacity"
             onClick={handleBackdropClick}
         >
-            <div className="w-full sm:max-w-md max-h-[85vh] bg-[#1a1a1a] rounded-t-3xl sm:rounded-3xl border border-white/10 shadow-2xl flex flex-col animate-fade-in-up overflow-hidden">
+            <div className="w-full sm:max-w-[440px] h-full sm:h-[90vh] bg-background text-on-surface font-manrope flex flex-col animate-fade-in-up overflow-hidden sm:rounded-3xl border border-outline-variant/20 shadow-2xl relative">
+                
+                {/* Header (Floating) */}
+                <header className="absolute top-0 w-full z-20 flex justify-between items-center px-6 h-16 bg-gradient-to-b from-black/60 to-transparent">
+                    <button 
+                        onClick={onClose}
+                        className="active:scale-95 transition-transform duration-400 text-[#D4AF37] p-2 bg-black/20 backdrop-blur-lg rounded-full"
+                    >
+                        <span className="material-symbols-outlined block">arrow_back</span>
+                    </button>
+                    <div /> {/* Spacer for title */}
+                    <button className="active:scale-95 transition-transform duration-400 text-[#D4AF37] p-2 bg-black/20 backdrop-blur-lg rounded-full">
+                        <span className="material-symbols-outlined block">favorite</span>
+                    </button>
+                </header>
 
-                {/* Header */}
-                <div className="relative border-b border-white/5 bg-[#2a2a2a]/50">
-                    {cocktail.image && cocktail.image.length > 0 && (
-                        <div className="w-full h-40 sm:h-48 overflow-hidden relative">
-                            <img
-                                src={cocktail.image[0].url}
-                                alt={cocktail.name}
-                                className="w-full h-full object-cover"
+                {/* Scrollable Area */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar pb-12">
+                    
+                    {/* Hero Section */}
+                    <section className="relative h-[480px] w-full overflow-hidden">
+                        {cocktail.image?.[0]?.url ? (
+                            <img 
+                                alt={cocktail.name} 
+                                className="w-full h-full object-cover scale-105" 
+                                src={cocktail.image[0].url} 
                             />
-                            <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1a] to-transparent" />
-                        </div>
-                    )}
-                    <div className="flex items-center justify-between p-6 absolute top-0 w-full">
-                        {/* Empty space for flex alignment if image exists, otherwise minimal padding */}
-                    </div>
-
-                    <div className={`p-6 ${cocktail.image && cocktail.image.length > 0 ? "pt-0 absolute bottom-0 w-full" : "flex items-center justify-between"}`}>
-                        <h2 className="text-xl sm:text-2xl font-bold text-[#f0ede8] gold-text drop-shadow-md">{cocktail.name}</h2>
-                        {!(cocktail.image && cocktail.image.length > 0) && (
-                            <button
-                                onClick={onClose}
-                                className="p-2 bg-[#333] hover:bg-[#444] rounded-full text-[#a8a49d] hover:text-white transition-colors"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                        ) : (
+                            <div className="w-full h-full bg-surface-container flex items-center justify-center">
+                                <span className="material-symbols-outlined text-6xl text-outline-variant">liquor</span>
+                            </div>
                         )}
-                    </div>
-                    {/* Close button layered on top if there's an image */}
-                    {cocktail.image && cocktail.image.length > 0 && (
-                        <button
-                            onClick={onClose}
-                            className="absolute top-4 right-4 p-2 bg-black/40 backdrop-blur-md rounded-full text-white/80 hover:text-white hover:bg-black/60 transition-colors z-10"
-                        >
-                            <X className="w-5 h-5" />
-                        </button>
-                    )}
-                </div>
-
-                {/* Body (Scrollable) */}
-                <div className="p-6 overflow-y-auto custom-scrollbar">
-
-                    {/* Ingredients Checklist */}
-                    <div className="mb-8">
-                        <h3 className="text-sm font-bold text-[#f0ede8] uppercase tracking-widest mb-4 flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#d4a843]"></span>
-                            Ingredients Check
-                        </h3>
-
-                        <ul className="space-y-3">
-                            {parsedIngredients.map((ing, idx) => {
-                                const isAlreadyInCart = shoppingList.includes(ing.nameForShopping);
-
-                                return (
-                                    <li key={idx} className="flex items-center justify-between p-3 rounded-xl bg-[#2a2a2a] border border-white/5">
-                                        <div className="flex items-center gap-3">
-                                            {ing.hasStock ? (
-                                                <CheckCircle2 className="w-5 h-5 text-green-500" />
-                                            ) : (
-                                                <XCircle className="w-5 h-5 text-red-500" />
-                                            )}
-                                            <span className={`text-sm ${ing.hasStock ? "text-[#f0ede8]" : "text-[#a8a49d]"}`}>
-                                                {ing.rawText}
-                                            </span>
-                                        </div>
-
-                                        {/* 장바구니 버튼 (재고 없을 때만 표시) */}
-                                        {!ing.hasStock && (
-                                            <button
-                                                onClick={() => addItem(ing.nameForShopping)}
-                                                disabled={isAlreadyInCart}
-                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${isAlreadyInCart
-                                                    ? "bg-[#333] text-[#6b6761] cursor-not-allowed"
-                                                    : "bg-[#d4a843]/10 text-[#d4a843] hover:bg-[#d4a843]/20 border border-[#d4a843]/30"
-                                                    }`}
-                                            >
-                                                <ShoppingCart className="w-3.5 h-3.5" />
-                                                {isAlreadyInCart ? "담김" : "리스트에 담기"}
-                                            </button>
-                                        )}
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    </div>
-
-                    {/* Instructions */}
-                    <div className="mb-6">
-                        <h3 className="text-sm font-bold text-[#f0ede8] uppercase tracking-widest mb-3 flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#d4a843]"></span>
-                            Instructions
-                        </h3>
-                        <div className="p-4 rounded-xl bg-[#2a2a2a]/50 border border-white/5">
-                            <p className="text-sm text-[#a8a49d] leading-relaxed whitespace-pre-wrap">
-                                {cocktail.instructions}
+                        <div className="absolute inset-0 hero-gradient"></div>
+                        <div className="absolute bottom-0 left-0 w-full p-8 space-y-2">
+                            <div className="flex gap-2 mb-4">
+                                <span className="bg-surface-variant/30 backdrop-blur-md px-3 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold text-primary">
+                                    {cocktail.technique || "Spirit-Forward"}
+                                </span>
+                                <span className="bg-surface-variant/30 backdrop-blur-md px-3 py-1 rounded-full text-[10px] uppercase tracking-widest font-bold text-primary">
+                                    Classic
+                                </span>
+                            </div>
+                            <h2 className="font-noto-serif text-5xl font-bold tracking-tight text-on-surface leading-tight">{cocktail.name}</h2>
+                            <p className="font-manrope text-on-surface-variant max-w-lg leading-relaxed text-sm opacity-90">
+                                {cocktail.info || `${cocktail.name} - 완벽한 밸런스와 복합적인 미감을 선사하는 클래식 칵테일입니다.`}
                             </p>
                         </div>
+                    </section>
+
+                    {/* Quick Stats Grid */}
+                    <section className="px-6 -mt-8 relative z-10 grid grid-cols-3 gap-4">
+                        <div className="bg-surface-container-low p-4 rounded-2xl border border-outline-variant/10 flex flex-col items-center justify-center text-center shadow-xl backdrop-blur-md">
+                            <span className="material-symbols-outlined text-primary mb-1">local_bar</span>
+                            <span className="text-[9px] uppercase tracking-widest text-on-surface-variant mb-1">Glass</span>
+                            <span className="text-xs font-bold truncate w-full">{glassType || "-"}</span>
+                        </div>
+                        <div className="bg-surface-container-low p-4 rounded-2xl border border-outline-variant/10 flex flex-col items-center justify-center text-center shadow-xl backdrop-blur-md">
+                            <span className="material-symbols-outlined text-primary mb-1">percent</span>
+                            <span className="text-[9px] uppercase tracking-widest text-on-surface-variant mb-1">ABV</span>
+                            <span className="text-xs font-bold">{abv ? `${abv}%` : "-"}</span>
+                        </div>
+                        <div className="bg-surface-container-low p-4 rounded-2xl border border-outline-variant/10 flex flex-col items-center justify-center text-center shadow-xl backdrop-blur-md">
+                            <span className="material-symbols-outlined text-primary mb-1">timer</span>
+                            <span className="text-[9px] uppercase tracking-widest text-on-surface-variant mb-1">Prep</span>
+                            <span className="text-xs font-bold truncate w-full">
+                                {cocktail.instructions && !cocktail.instructions.includes('1.') ? cocktail.instructions : (cocktail.make && !cocktail.make.includes('1.') ? cocktail.make : "3분")}
+                            </span>
+                        </div>
+                    </section>
+
+                    {/* Tasting Notes */}
+                    <section className="px-6 py-12">
+                        <h3 className="font-noto-serif text-xl mb-6 flex items-center gap-3">
+                            <span className="h-px flex-1 bg-outline-variant/20"></span>
+                            테이스팅 노트
+                            <span className="h-px flex-1 bg-outline-variant/20"></span>
+                        </h3>
+                        <div className="flex justify-center gap-8">
+                            <div className="flex flex-col items-center">
+                                <div className="w-12 h-12 rounded-full border border-primary/40 flex items-center justify-center mb-2 bg-primary/5">
+                                    <span className="text-[10px] font-bold text-primary italic">Btr</span>
+                                </div>
+                                <span className="text-[10px] uppercase tracking-tighter text-on-surface-variant font-bold">Bitter</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                                <div className="w-12 h-12 rounded-full border border-primary/40 flex items-center justify-center mb-2 bg-primary/5">
+                                    <span className="text-[10px] font-bold text-primary italic">Swt</span>
+                                </div>
+                                <span className="text-[10px] uppercase tracking-tighter text-on-surface-variant font-bold">Sweet</span>
+                            </div>
+                            <div className="flex flex-col items-center">
+                                <div className="w-12 h-12 rounded-full border border-primary/40 flex items-center justify-center mb-2 bg-primary/5">
+                                    <span className="text-[10px] font-bold text-primary italic">Hrb</span>
+                                </div>
+                                <span className="text-[10px] uppercase tracking-tighter text-on-surface-variant font-bold">Herbal</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* Content Section: Ingredients & Instructions */}
+                    <div className="px-6 space-y-12">
+                        {/* Ingredients */}
+                        <section>
+                            <h3 className="font-noto-serif text-2xl mb-8 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-primary">inventory_2</span>
+                                필요한 재료
+                            </h3>
+                            <ul className="space-y-4">
+                                {parsedIngredients.map((ing, idx) => {
+                                    const isAlreadyInCart = shoppingList.includes(ing.nameForShopping);
+                                    return (
+                                        <li key={idx} className="flex items-center justify-between group py-2">
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${ing.hasStock ? "bg-primary/20 text-primary border border-primary/30" : "bg-surface-container border border-outline-variant/20 text-outline-variant"}`}>
+                                                    <span className="material-symbols-outlined text-sm">{ing.hasStock ? "check" : "liquor"}</span>
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <span className={`font-semibold text-sm ${ing.hasStock ? "text-on-surface" : "text-outline"}`}>{ing.rawText}</span>
+                                                    {!ing.hasStock && (
+                                                        <button 
+                                                            onClick={(e) => { e.stopPropagation(); addItem(ing.nameForShopping); }}
+                                                            disabled={isAlreadyInCart}
+                                                            className="text-[10px] text-primary font-bold text-left hover:underline disabled:opacity-50"
+                                                        >
+                                                            {isAlreadyInCart ? "장바구니 담김" : "+ 재료 목록에 담기"}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {ing.hasStock && <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full uppercase italic">In Bar</span>}
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                            
+                            <button className="mt-10 w-full py-4 rounded-2xl bg-gradient-to-br from-primary to-primary-container text-on-primary font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 shadow-2xl shadow-primary/20 active:scale-[0.98] transition-all">
+                                <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>add_circle</span>
+                                나의 홈바에 담기
+                            </button>
+                        </section>
+
+                        {/* Instructions */}
+                        <section>
+                            <h3 className="font-noto-serif text-2xl mb-8 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-primary">menu_book</span>
+                                제조 방법
+                            </h3>
+                            
+                            <div className="space-y-8 relative">
+                                <div className="absolute left-[19px] top-4 bottom-4 w-px bg-outline-variant/30"></div>
+                                
+                                {/* Step 1: Logic to find technique string regardless of column */}
+                                {(() => {
+                                    const technique = (!cocktail.instructions?.includes('1.') ? cocktail.instructions : (cocktail.make && !cocktail.make.includes('1.') ? cocktail.make : null));
+                                    if (technique) {
+                                        return (
+                                            <div className="relative flex gap-6">
+                                                <div className="z-10 w-10 h-10 rounded-full bg-surface-container border border-[#D4AF37] flex items-center justify-center text-[#D4AF37] font-noto-serif italic font-bold shadow-[0_0_15px_rgba(212,175,55,0.2)]">
+                                                    1
+                                                </div>
+                                                <div className="flex-1 pt-1">
+                                                    <p className="text-on-surface font-bold text-base opacity-95">{technique}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
+
+                                {/* Main Steps from either make or instructions (whichever has the numbers) */}
+                                {(() => {
+                                    const rawSteps = (cocktail.make?.includes('1.') ? cocktail.make : (cocktail.instructions?.includes('1.') ? cocktail.instructions : ""));
+                                    const steps = rawSteps.split(/\d+\.\s*/).filter(step => step.trim().length > 0);
+                                    const hasTechnique = (!cocktail.instructions?.includes('1.') ? cocktail.instructions : (cocktail.make && !cocktail.make.includes('1.') ? cocktail.make : null));
+                                    
+                                    return steps.map((step, idx) => {
+                                        const stepNumber = hasTechnique ? idx + 2 : idx + 1;
+                                        return (
+                                            <div key={idx} className="relative flex gap-6">
+                                                <div className="z-10 w-10 h-10 rounded-full bg-surface-container border border-outline-variant/40 flex items-center justify-center text-primary font-noto-serif italic font-bold">
+                                                    {stepNumber}
+                                                </div>
+                                                <div className="flex-1 pt-1">
+                                                    <p className="text-on-surface leading-relaxed text-sm opacity-90">{step.trim()}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                        </section>
                     </div>
 
-                    {/* Substitutes / Garnish Information */}
-                    {parsedSubstitutes && (
-                        <div className="mb-6">
-                            <h3 className="text-sm font-bold text-[#f0ede8] uppercase tracking-widest mb-3 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-[#d4a843]"></span>
-                                Garnish / Substitutes
-                            </h3>
-                            <div className="p-4 rounded-xl bg-[#2a2a2a]/50 border border-white/5">
-                                <p className="text-sm text-[#d4a843] italic">
-                                    {parsedSubstitutes}
+                    {/* Expert Tip Section */}
+                    <section className="mt-20 px-6">
+                        <div className="bg-surface-container-high rounded-3xl p-8 border border-outline-variant/20 relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform duration-700">
+                                <span className="material-symbols-outlined text-[100px]">lightbulb</span>
+                            </div>
+                            <div className="relative z-10">
+                                <h4 className="font-noto-serif text-lg mb-4 text-primary italic">믹솔로지스트의 팁</h4>
+                                <p className="text-on-surface-variant leading-relaxed italic text-sm">
+                                    {parsedSubstitutes || "완벽한 칵테일을 위해 최고급 재료만을 사용하세요. 신선한 오렌지 껍질에서 나오는 에센셜 오일이 칵테일의 풍미를 더욱 깊게 만들어줍니다."}
                                 </p>
+                                <div className="mt-6 flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
+                                        <span className="material-symbols-outlined text-sm text-primary">person</span>
+                                    </div>
+                                    <span className="text-[10px] uppercase tracking-widest font-black text-on-surface">Master Bartender</span>
+                                </div>
                             </div>
                         </div>
-                    )}
-
-                    {/* Technique (If exists) */}
-                    {cocktail.technique && (
-                        <div className="mb-6">
-                            <h3 className="text-sm font-bold text-[#f0ede8] uppercase tracking-widest mb-3 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-[#d4a843]"></span>
-                                Technique
-                            </h3>
-                            <div className="p-4 rounded-xl bg-[#2a2a2a]/50 border border-white/5">
-                                <p className="text-sm text-[#d4a843] font-medium">
-                                    {cocktail.technique}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Garnish (If exists) */}
-                    {cocktail.garnish && (
-                        <div>
-                            <h3 className="text-sm font-bold text-[#f0ede8] uppercase tracking-widest mb-3 flex items-center gap-2">
-                                <span className="w-1.5 h-1.5 rounded-full bg-[#d4a843]"></span>
-                                Garnish
-                            </h3>
-                            <div className="p-4 rounded-xl bg-[#2a2a2a]/50 border border-white/5">
-                                <p className="text-sm text-[#a8a49d] italic">
-                                    {cocktail.garnish}
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
+                    </section>
                 </div>
             </div>
         </div>,

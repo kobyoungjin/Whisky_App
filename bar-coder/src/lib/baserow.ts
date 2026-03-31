@@ -66,6 +66,9 @@ export async function addInventoryItem(uid: string, data: Omit<InventoryItem, "i
         );
         return response.data;
     } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+            console.error("Baserow Add Error Details:", JSON.stringify(error.response.data, null, 2));
+        }
         console.error("Error adding inventory item:", error);
         throw error;
     }
@@ -84,6 +87,9 @@ export async function updateInventoryItem(id: number, data: Partial<Omit<Invento
         );
         return response.data;
     } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+            console.error("Baserow Update Error Details:", JSON.stringify(error.response.data, null, 2));
+        }
         console.error("Error updating inventory item:", error);
         throw error;
     }
@@ -100,6 +106,9 @@ export async function deleteInventoryItem(id: number): Promise<void> {
             { headers: getHeaders() }
         );
     } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+            console.error("Baserow Delete Error Details:", JSON.stringify(error.response.data, null, 2));
+        }
         console.error("Error deleting inventory item:", error);
         throw error;
     }
@@ -111,7 +120,7 @@ export async function deleteInventoryItem(id: number): Promise<void> {
 export async function getRecipes(): Promise<RecipeItem[]> {
     if (!RECIPES_TABLE_ID) throw new Error("Recipes Table ID is missing.");
 
-    const CACHE_KEY = "bar_coder_recipes_cache";
+    const CACHE_KEY = "bar_coder_recipes_cache_v2";
     const CACHE_TTL = 60 * 60 * 1000; // 1시간 (ms)
 
     // 1. 브라우저 캐시 확인
@@ -160,6 +169,54 @@ export async function getRecipes(): Promise<RecipeItem[]> {
         return allResults;
     } catch (error) {
         console.error("Error fetching recipes:", error);
+        throw error;
+    }
+}
+
+/**
+ * [Recipes] 새로운 레시피 추가
+ */
+export async function addRecipe(data: Omit<RecipeItem, "id">): Promise<RecipeItem> {
+    if (!RECIPES_TABLE_ID) throw new Error("Recipes Table ID is missing.");
+    try {
+        const response = await axios.post(
+            `${BASEROW_API_URL}/database/rows/table/${RECIPES_TABLE_ID}/?user_field_names=true`,
+            data,
+            { headers: getHeaders() }
+        );
+        return response.data;
+    } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+            console.error("Baserow Recipe Add Error:", JSON.stringify(error.response.data, null, 2));
+        }
+        console.error("Error adding recipe:", error);
+        throw error;
+    }
+}
+
+/**
+ * [Files] Baserow 서버에 파일 업로드
+ */
+export async function uploadFile(file: File): Promise<any> {
+    if (!BASEROW_TOKEN) throw new Error("Baserow Token is missing.");
+    
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+        const response = await axios.post(
+            `${BASEROW_API_URL}/user-files/upload-file/`,
+            formData,
+            {
+                headers: {
+                    ...getHeaders(),
+                    "Content-Type": "multipart/form-data",
+                },
+            }
+        );
+        return response.data; // { url, name, size, type, ... }
+    } catch (error) {
+        console.error("Error uploading file to Baserow:", error);
         throw error;
     }
 }

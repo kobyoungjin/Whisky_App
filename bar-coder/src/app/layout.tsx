@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Noto_Serif, Manrope } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -10,6 +10,19 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const notoSerif = Noto_Serif({
+  variable: "--font-headline",
+  subsets: ["latin"],
+  style: ["italic", "normal"],
+  weight: ["400", "700"],
+});
+
+const manrope = Manrope({
+  variable: "--font-body",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -26,7 +39,8 @@ export const viewport: Viewport = {
 };
 
 import BottomNav from "@/components/ui/BottomNav";
-import ChatBot from "@/components/chatbot/ChatBot";
+import TopAppBar from "@/components/ui/TopAppBar";
+import MainContent from "@/components/ui/MainContent";
 
 export default function RootLayout({
   children,
@@ -35,15 +49,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className="dark">
+      <head>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" />
+      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased selection:bg-[#d4a843]/20 selection:text-[#e8c06a]`}
+        className={`${geistSans.variable} ${geistMono.variable} ${notoSerif.variable} ${manrope.variable} antialiased selection:bg-primary/30`}
         style={{ background: "var(--bg-primary)" }}
       >
-        <main className="min-h-screen has-bottom-nav">
-          {children}
-        </main>
-        <BottomNav />
-        <ChatBot />
+        <div className="mobile-container">
+          <TopAppBar />
+          <MainContent>{children}</MainContent>
+          <BottomNav />
+        </div>
       </body>
     </html>
   );

@@ -25,10 +25,18 @@ export interface AvailabilityResult {
 }
 
 /**
+ * 재료 이름에서 '주스', '시럽' 앞의 수식어(풍미 키워드)를 추출
+ */
+function extractFlavorKeyword(norm: string, suffix: string): string {
+    const idx = norm.indexOf(suffix);
+    if (idx <= 0) return "";
+    return norm.substring(0, idx).trim();
+}
+
+/**
  * [공통] 요구 재료(reqName)와 인벤토리 아이템(item)이 매치되는지 확인하는 정밀(Strict) 함수
  */
 export function isIngredientMatched(reqName: string, item: InventoryItem): boolean {
-    // 공백 제거 및 소문자화하여 비교 (더 유연한 매칭)
     const normalize = (s: string) => s.replace(/\s+/g, "").toLowerCase();
 
     const reqLower = reqName.toLowerCase();
@@ -37,40 +45,87 @@ export function isIngredientMatched(reqName: string, item: InventoryItem): boole
     const itemNorm = normalize(item.name);
     const itemCat = (item.category?.value || "").toLowerCase();
 
+    // 0. 완전 일치 여부 먼저 확인 (가장 우선)
+    if (itemNorm === reqNorm) return true;
+
+    // 0.5 [특수 케이스] '물'은 항상 있는 것으로 간주
+    if (reqNorm === "물" || reqNorm === "water") return true;
+
     // 1. [특수 케이스] 진저 에일 / 진저 비어 (진(Gin)과의 오매칭 방지용)
     if (reqNorm.includes("진저") || reqNorm.includes("ginger")) {
-        // 요구사항이 진저 계열이면, 인벤토리 아이템 이름에 반드시 '진저' 또는 'ginger'가 있어야 함
         return itemNorm.includes("진저") || itemNorm.includes("ginger");
     }
 
-    // 2. [특수 케이스] 시럽류 (정밀 매칭)
+    // 2. [특수 케이스] 주스류 (식별자: 주스, juice, 즙) - "라임주스"가 있다고 "오렌지주스" 매칭되면 안 됨
+    if (reqNorm.includes("주스") || reqNorm.includes("juice") || reqNorm.includes("즙")) {
+        // "즙"도 주스의 일종으로 취급 (레몬즙 = 레몬 주스)
+        const suffix = reqNorm.includes("주스") ? "주스" : (reqNorm.includes("즙") ? "즙" : "juice");
+        const reqFlavor = extractFlavorKeyword(reqNorm, suffix);
+        const itemHasSuffix = itemNorm.includes("주스") || itemNorm.includes("juice") || itemNorm.includes("즙");
+
+        if (!itemHasSuffix) return false; // 인벤토리 아이템이 주스/즙이 아니면 불일치
+
+        const itemSuffix = itemNorm.includes("주스") ? "주스" : (itemNorm.includes("즙") ? "즙" : "juice");
+        const itemFlavor = extractFlavorKeyword(itemNorm, itemSuffix);
+
+        // 둘 다 주스인데, 풍미 키워드가 있으면 반드시 일치해야 함
+        if (reqFlavor && itemFlavor) {
+            return reqFlavor === itemFlavor ||
+                reqFlavor.includes(itemFlavor) ||
+                itemFlavor.includes(reqFlavor);
+        }
+        // 풍미 키워드가 없으면(그냥 "주스") 통과
+        return !reqFlavor;
+    }
+
+    // 3. [특수 케이스] 시럽류 (정밀 매칭)
     if (reqNorm.includes("시럽") || reqNorm.includes("syrup")) {
-        // 2-1. 심플 시럽 (단순 설탕물)
         if (reqNorm === "심플시럽" || reqNorm === "시럽" || reqNorm === "설탕시럽") {
             return itemNorm.includes("시럽") || itemNorm.includes("syrup") ||
                 itemNorm.includes("설탕") || itemNorm.includes("sugar");
         }
-        // 2-2. 향 시럽 (그레나딘, 바닐라 등)
-        // 시럽 자르기 (예: "그레나딘시럽" -> "그레나딘")
         const flavor = reqNorm.replace(/시럽|syrup/g, "").trim();
         if (flavor) {
             return itemNorm.includes(flavor);
         }
     }
 
-    // 3. 이름 기반 매칭 (서로 포함관계 확인)
+    // 4. 이름 기반 매칭 (서로 포함관계 확인) - 짧은 공통 단어 오매칭 방지
     if (itemNorm.includes(reqNorm) || reqNorm.includes(itemNorm)) {
-        // [추가 검증] '진'이 '진저에일'에 매칭되는 것과 같은 케이스를 한번 더 걸러냄
-        // 인벤토리 이름이 너무 짧은데(예: '진') 긴 요구사항('진저에일')에 포함되는 경우, 
-        // 위에서 처리되지 않은 다른 케이스들도 있을 수 있으므로 길이를 체크하거나 
-        // 베이스 스피릿 이름인지 확인하는 등의 보수적 접근이 필요할 수 있음. 
-        // 현재는 진저와 시럽이 가장 크므로 우선 통과.
+        // 매칭되는 공통 부분이 너무 짧으면(1자 이하) 무시 - 예: "진"이 "진저에일"에 매칭되는 것 방지
+        const matchLen = Math.min(reqNorm.length, itemNorm.length);
+        if (matchLen <= 1) {
+            // "진", "럼" 처럼 1자 매칭은 브랜드명 형식일 때만 허용
+            // "봄베이진" (item) vs "진" (req) -> EndsWith("진") OK
+            // "진저에일" (item) vs "진" (req) -> EndsWith("진") 아님 -> Block
+            if (itemNorm.endsWith(reqNorm) || reqNorm.endsWith(itemNorm)) {
+               // 예외: "진저"는 "진"으로 취급하지 않음
+               if (itemNorm.includes("진저") && !reqNorm.includes("진저")) return false;
+               return true;
+            }
+            return itemNorm === reqNorm;
+        }
+
+        // 한쪽이 다른쪽에 포함될 때, 포함된 쪽과 포함하는 쪽의 길이 차이가 너무 크면 의심됨
+        const longer = itemNorm.length > reqNorm.length ? itemNorm : reqNorm;
+        const shorter = itemNorm.length > reqNorm.length ? reqNorm : itemNorm;
+        const lenRatio = shorter.length / longer.length;
+
+        if (lenRatio < 0.4) {
+            // "호세쿠엘보데킬라"(8) vs "데킬라"(3) = 0.375 (0.4보다 작음)
+            // 인벤토리 아이템이 요구 이름으로 끝나거나(브랜드명+술이름), 뒤에 괄호 정보 등이 있는 경우 허용
+            if (itemNorm.endsWith(reqNorm) || reqNorm.endsWith(itemNorm)) return true;
+            
+            // "데킬라(화이트)" 처럼 뒤에 괄호가 붙은 경우
+            if (longer.startsWith(shorter) && (longer[shorter.length] === '(' || longer[shorter.length] === '[')) return true;
+
+            return itemNorm === reqNorm;
+        }
         return true;
     }
 
-    // 4. 카테고리 매칭 처리 (리큐르 등 넓은 범주)
+    // 5. 카테고리 매칭 처리 (리큐르 등 넓은 범주)
     if (itemCat && (itemCat.includes(reqLower) || reqLower.includes(itemCat))) {
-        // [엄격한 과일/향 리큐르 검증 (Strict Liqueur Matching)]
         if (itemCat.includes("리큐르") || reqLower.includes("리큐르")) {
             const coreKeyword = reqLower.replace(/리큐르|liqueur/g, "").trim();
             if (coreKeyword && (itemName.includes(coreKeyword) || coreKeyword.includes(itemName))) {
@@ -95,11 +150,15 @@ export function checkCocktailAvailability(
     const inventoryNames = inventory.map((item) => item.name.toLowerCase());
     const inventoryCategories = inventory.map((item) => (item.category?.value || "").toLowerCase());
 
-    // 간단한 파싱: 레시피의 ingredients 텍스트를 줄바꿈이나 쉼표로 분리
+    // 재료 파싱: 줄바꿈/쉼표로 분리 후, 용량(숫자 + 단위) 및 불필요한 문자 제거
     const requiredIngredients = recipe.ingredients
         .split(/,|\n/)
         .map((item) => item.trim())
+        // 용량 표기 제거: "오렌지 주스 90ml" -> "오렌지 주스", "2 oz 라임 주스" -> "라임 주스"
+        .map((item) => item.replace(/\d+(\.\d+)?\s*(ml|oz|cl|tsp|tbsp|dash|drop|g|쪽|개|적|조금|약간|to\s+taste)/gi, "").trim())
+        .map((item) => item.replace(/^\d+\s*/, "").trim()) // 앞에 숫자만 남은 경우 제거
         .filter(Boolean);
+
 
     const missingIngredients: string[] = [];
     const substituteSuggestions: AvailabilityResult["substituteSuggestions"] = [];

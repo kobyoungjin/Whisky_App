@@ -24,34 +24,43 @@ const CocktailGrid: React.FC<CocktailGridProps> = ({ cocktails, inventory = [] }
 
     return (
         <>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 md:gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
                 {cocktails.map((cocktail) => (
                     <div
                         key={cocktail.id}
                         onClick={() => setSelectedCocktail(cocktail)}
-                        className="group flex flex-col items-center cursor-pointer"
+                        className="group flex flex-col cursor-pointer bg-surface-container-low border border-outline-variant/10 rounded-xl overflow-hidden hover:border-primary/30 transition-all duration-500 shadow-md hover:shadow-primary/5"
                     >
-                        {/* 1:1 Aspect Ratio Image Box */}
-                        <div className="w-full aspect-square rounded-2xl bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] border border-white/5 flex items-center justify-center group-hover:border-[#d4a843]/50 group-hover:shadow-[0_0_15px_rgba(212,168,67,0.15)] transition-all duration-300 relative overflow-hidden mb-2">
+                        {/* Dramatic Aspect Ratio Image Box */}
+                        <div className="w-full aspect-[4/3] bg-surface-container flex items-center justify-center relative overflow-hidden">
                             {cocktail.image && cocktail.image.length > 0 ? (
                                 <img
                                     src={cocktail.image[0].url}
                                     alt={cocktail.name}
-                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                                    className="w-full h-full object-cover grayscale opacity-70 group-hover:grayscale-0 group-hover:opacity-100 group-hover:scale-110 transition-all duration-700"
                                 />
                             ) : (
-                                <GlassWater className="w-8 h-8 md:w-10 md:h-10 text-[#d4a843] opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all duration-500" />
+                                <GlassWater className="w-10 h-10 text-primary opacity-40 group-hover:opacity-100 group-hover:scale-110 transition-all duration-500" />
                             )}
 
                             {/* Gradient Overlay for style */}
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent pointer-events-none" />
                         </div>
 
-                        {/* Name Label */}
-                        <div className="w-full text-center">
-                            <h3 className="text-[10px] md:text-xs font-bold text-[#f0ede8] group-hover:text-[#d4a843] transition-colors duration-300 line-clamp-2 leading-tight px-1">
-                                {cocktail.name}
-                            </h3>
+                        {/* Text Content */}
+                        <div className="w-full p-4 flex flex-col justify-between flex-1">
+                            <div>
+                                <h3 className="text-sm md:text-base font-headline font-bold text-on-surface group-hover:text-primary transition-colors duration-300 line-clamp-2 leading-tight mb-1">
+                                    {cocktail.name}
+                                </h3>
+                                <p className="text-[10px] md:text-xs font-body text-on-surface-variant line-clamp-1">
+                                    {cocktail.ingredients ? cocktail.ingredients.split('\n')[0].replace(/[-*]\s*/g, '') : "Spirits & Mixers"}
+                                </p>
+                            </div>
+                            <div className="mt-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                <span className="text-[9px] font-label font-bold text-primary uppercase tracking-widest">View Recipe</span>
+                                <span className="material-symbols-outlined text-[12px] text-primary">arrow_forward</span>
+                            </div>
                         </div>
                     </div>
                 ))}
