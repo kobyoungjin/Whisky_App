@@ -557,7 +557,7 @@ function MyPageContent() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {loading ? (
                             Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
                         ) : filteredInventory.length > 0 ? (
