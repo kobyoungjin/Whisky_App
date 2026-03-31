@@ -70,8 +70,8 @@ export default function RecipesPage() {
         glass: "",
         info: "",
         abv: 15,
-        garnish: "",      // New: for JSON
-        base: "",         // New: for JSON
+        garnish: "",
+        base: "",
         technique: "Easy"
     });
 

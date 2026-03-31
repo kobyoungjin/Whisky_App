@@ -18,7 +18,7 @@ export interface RecipeItem {
     technique?: string; // Optional technique (hero badge)
     make?: string; // 제조 방법 (쉐이킹, 스터링, 빌드 등) + prep time
     garnish?: string; // Optional garnish
-    abv?: string; // Alcohol by volume
+    abv?: number | string; // Alcohol by volume (number or string)
     glass?: string; // Glass type
     info?: string; // Short description
 }
