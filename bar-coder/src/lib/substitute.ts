@@ -11,6 +11,8 @@ export const SUBSTITUTE_RULES: Record<string, string[]> = {
     "캄파리": ["아페롤 (조금 더 달고 가벼움)"],
     "드라이 베르무트": ["릴레 블랑", "건식 화이트 와인"],
     "스위트 베르무트": ["루비 포트", "스위트 셰리"],
+    "아마레또": ["디사론노", "아메레토", "아몬드 리큐르"],
+    "디사론노": ["아마레또", "아메레토", "아몬드 리큐르"],
 };
 
 export interface AvailabilityResult {
@@ -50,6 +52,12 @@ export function isIngredientMatched(reqName: string, item: InventoryItem): boole
 
     // 0.5 [특수 케이스] '물'은 항상 있는 것으로 간주
     if (reqNorm === "물" || reqNorm === "water") return true;
+
+    // 0.6 [특수 케이스] 아마레또와 디사론노는 동일 재료로 간주
+    const amarettoSynonyms = ["아마레또", "디사론노", "아메레토", "amaretto", "disaronno"];
+    if (amarettoSynonyms.some(syn => reqNorm.includes(syn))) {
+        return amarettoSynonyms.some(syn => itemNorm.includes(syn));
+    }
 
     // 1. [특수 케이스] 진저 에일 / 진저 비어 (진(Gin)과의 오매칭 방지용)
     if (reqNorm.includes("진저") || reqNorm.includes("ginger")) {
@@ -155,9 +163,18 @@ export function checkCocktailAvailability(
         .split(/,|\n/)
         .map((item) => item.trim())
         // 용량 표기 제거: "오렌지 주스 90ml" -> "오렌지 주스", "2 oz 라임 주스" -> "라임 주스"
-        .map((item) => item.replace(/\d+(\.\d+)?\s*(ml|oz|cl|tsp|tbsp|dash|drop|g|쪽|개|적|조금|약간|to\s+taste)/gi, "").trim())
+        .map((item) => item.replace(/\d+(\.\d+)?\s*(ml|oz|cl|tsp|tbsp|dash|drop|g|쪽|개|적|조금|약간|티스푼|큰술|작은술|to\s+taste)/gi, "").trim())
         .map((item) => item.replace(/^\d+\s*/, "").trim()) // 앞에 숫자만 남은 경우 제거
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter((item) => {
+            const lower = item.toLowerCase();
+            // 제조 공법 관련 키워드가 재료 필드에 잘못 혼합된 경우 제외
+            return !lower.includes("쉐이킹") && 
+                   !lower.includes("스터링") && 
+                   !lower.includes("빌드") && 
+                   !lower.includes("기법") && 
+                   !lower.includes("쉐이크");
+        });
 
 
     const missingIngredients: string[] = [];

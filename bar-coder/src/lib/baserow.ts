@@ -120,7 +120,7 @@ export async function deleteInventoryItem(id: number): Promise<void> {
 export async function getRecipes(): Promise<RecipeItem[]> {
     if (!RECIPES_TABLE_ID) throw new Error("Recipes Table ID is missing.");
 
-    const CACHE_KEY = "bar_coder_recipes_cache_v2";
+    const CACHE_KEY = "bar_coder_recipes_cache_v3";
     const CACHE_TTL = 60 * 60 * 1000; // 1시간 (ms)
 
     // 1. 브라우저 캐시 확인
@@ -190,6 +190,27 @@ export async function addRecipe(data: Omit<RecipeItem, "id">): Promise<RecipeIte
             console.error("Baserow Recipe Add Error:", JSON.stringify(error.response.data, null, 2));
         }
         console.error("Error adding recipe:", error);
+        throw error;
+    }
+}
+
+/**
+ * [Recipes] 기존 레시피 수정
+ */
+export async function updateRecipe(id: number, data: Partial<RecipeItem>): Promise<RecipeItem> {
+    if (!RECIPES_TABLE_ID) throw new Error("Recipes Table ID is missing.");
+    try {
+        const response = await axios.patch(
+            `${BASEROW_API_URL}/database/rows/table/${RECIPES_TABLE_ID}/${id}/?user_field_names=true`,
+            data,
+            { headers: getHeaders() }
+        );
+        return response.data;
+    } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+            console.error("Baserow Recipe Update Error:", JSON.stringify(error.response.data, null, 2));
+        }
+        console.error("Error updating recipe:", error);
         throw error;
     }
 }

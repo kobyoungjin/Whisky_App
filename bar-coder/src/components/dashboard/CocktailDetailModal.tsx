@@ -46,7 +46,7 @@ export default function CocktailDetailModal({
         return reqs.map((reqInfo) => {
             // 용량 및 단위 제거 로직 (substitute.ts와 동기화)
             const baseName = reqInfo
-                .replace(/\d+(\.\d+)?\s*(ml|oz|cl|tsp|tbsp|dash|drop|g|쪽|개|적|조금|약간|to\s+taste)/gi, "") // 단위 제거
+                .replace(/\d+(\.\d+)?\s*(ml|oz|cl|tsp|tbsp|dash|drop|g|쪽|개|적|조금|약간|티스푼|큰술|작은술|to\s+taste)/gi, "") // 단위 제거
                 .replace(/^\d+\s*/, "") // 앞의 숫자 제거
                 .split('(')[0] // 괄호 뒤 메모 제거
                 .trim()
@@ -58,7 +58,7 @@ export default function CocktailDetailModal({
                 nameForShopping: baseName,
                 hasStock,
             };
-        });
+        }).filter(ing => !ing.rawText.includes("드라이쉐이킹 후 쉐이킹"));
     }, [cocktail, inventory]);
 
     // Garnish / Substitutes Logic
@@ -262,7 +262,17 @@ export default function CocktailDetailModal({
                                 {/* Main Steps from either make or instructions (whichever has the numbers) */}
                                 {(() => {
                                     const rawSteps = (cocktail.make?.includes('1.') ? cocktail.make : (cocktail.instructions?.includes('1.') ? cocktail.instructions : ""));
-                                    const steps = rawSteps.split(/\d+\.\s*/).filter(step => step.trim().length > 0);
+                                    let steps = rawSteps.split(/\d+\.\s*/).filter(step => step.trim().length > 0);
+                                    
+                                    // Amaretto Sour 특수 패치: 드라이쉐이킹 단계 삽입
+                                    if (cocktail.name.includes("아마레또") && cocktail.ingredients.includes("드라이쉐이킹")) {
+                                        // 3번과 4번 사이에 삽입 (0-indexed array 기준 3번째 인덱스 뒤)
+                                        if (steps.length >= 3) {
+                                            steps.splice(3, 0, "드라이쉐이킹 후 쉐이킹 (Dry Shake then Shake)");
+                                        } else {
+                                            steps.push("드라이쉐이킹 후 쉐이킹 (Dry Shake then Shake)");
+                                        }
+                                    }
                                     const hasTechnique = (!cocktail.instructions?.includes('1.') ? cocktail.instructions : (cocktail.make && !cocktail.make.includes('1.') ? cocktail.make : null));
                                     
                                     return steps.map((step, idx) => {
