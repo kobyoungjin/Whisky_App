@@ -52,9 +52,9 @@ function MyPageContent() {
 
     // 카테고리 분류 상수 (Baserow Select Option Values와 일치해야 함)
     const CATEGORIES = {
-        base: ["위스키", "스카치 위스키", "버번 위스키", "버번", "스카치", "진", "럼", "보드카", "데킬라", "테킬라", "브랜디", "꼬냑", "코냑", "와인", "소주", "전통주", "기타 증류주"],
-        liqueur: ["리큐르", "베르무트", "리큐어"],
-        ingredient: ["과일", "주스", "쥬스", "시럽", "소다", "탄산수", "비터", "설탕", "소금", "가루", "맥주", "음료", "기타"]
+        base: ["위스키", "버번", "진", "럼", "보드카", "데킬라", "테킬라", "브랜디", "꼬냑", "코냑", "와인", "소주", "전통주", "기타 증류주"],
+        liqueur: ["리큐르", "베르무트", "비터"],
+        ingredient: ["과일", "주스", "시럽", "소다", "음료", "기타", "가루"],
     };
 
 
@@ -62,10 +62,10 @@ function MyPageContent() {
         const n = name.toLowerCase();
         const c = categoryValue.toLowerCase();
 
-        // 보강된 키워드 세트
-        const baseKeywords = [...CATEGORIES.base, "whisky", "whiskey", "blended", "single malt", "scotch", "bourbon", "스카치", "버번", "싱글몰트", "블렌디드", "발렌타인", "맥캘란", "glen", "글렌", "springbank", "스프링뱅크", "cognac", "wine", "wine", "cognac", "와인", "꼬냑"];
+        // 보강된 키워드 세트 (Baserow 실제 옵션 기반)
+        const baseKeywords = [...CATEGORIES.base, "whisky", "whiskey", "blended", "single malt", "scotch", "bourbon", "스카치", "버번", "싱글몰트", "블렌디드", "발렌타인", "맥캘란", "glen", "글렌", "springbank", "스프링뱅크", "talisker", "탈리스커", "laphroaig", "라프로익", "cognac", "wine", "꼬냑", "와인", "헤네시", "hennessy", "산토리", "suntory", "야마자키", "yamazaki", "히비키", "hibiki", "러셀", "russell", "블랜튼", "blanton", "버팔로", "buffalo", "놉크릭", "knob creek", "엘라이자", "elijah", "믹터스", "michter", "메이커스", "makers", "와일드터키", "wild turkey", "우드포드", "woodford", "포로지스", "four roses"];
 
-        const liqueurKeywords = [...CATEGORIES.liqueur, "liqueur", "bols", "de kuyper", "깔루아", "베일리", "말리부", "트리플", "섹", "디카이퍼"];
+        const liqueurKeywords = [...CATEGORIES.liqueur, "liqueur", "bols", "de kuyper", "깔루아", "베일리", "말리부", "트리플", "섹", "디카이퍼", "캄파리", "campari", "코앵트로", "cointreau", "미도리", "midori", "피치트리", "peachtree", "아마레또", "amaretto"];
 
         // 1순위: 카테고리 값 기준 (Baserow 설정값 우선)
         if (CATEGORIES.base.some(b => c.includes(b))) return "base";

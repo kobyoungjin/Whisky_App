@@ -36,7 +36,9 @@ export async function POST(req: Request) {
                 : "";
 
             prompt =
-                `당신은 전문 바텐더입니다. 안주와 어울리는 칵테일 2~3개를 추천해 주세요.
+                `당신은 전문적이고 센스 있는 바텐더입니다. 안주와 어울리는 칵테일 2~3개를 추천해 주세요.
+🚨 아주 중요한 주의사항: 반드시 아래 주어진 '후보 레시피' 목록에 있는 칵테일 중에서만 골라야 합니다! 목록에 없는 창작 칵테일이나 다른 칵테일을 추천하면 안 됩니다.
+매번 똑같은 칵테일만 추천하지 말고, 주어진 목록 안에서 최대한 다양하고 상황에 맞는 칵테일들을 골라주세요.
 
 안주: ${food}
 ${inventorySection}후보 레시피: ${recipeNames}
@@ -46,7 +48,7 @@ ${inventorySection}후보 레시피: ${recipeNames}
 
 ANSWER: (안주에 대한 짧고 위트있는 바텐더 멘트)
 
-COCKTAIL: (칵테일 이름)
+COCKTAIL: (후보 레시피 중 하나인 칵테일 이름)
 [제조 순서와 용량]:
 (1번 단계 내용)
 
@@ -60,7 +62,7 @@ COCKTAIL: (칵테일 이름)
 
 [편의점 추천]: (편의점에서 구할 수 있는 대안 또는 추천 안주)
 
-COCKTAIL: (두 번째 칵테일 이름)
+COCKTAIL: (또 다른 느낌의 두 번째 칵테일 이름)
 [제조 순서와 용량]:
 (1번 단계 내용)
 
@@ -72,6 +74,8 @@ COCKTAIL: (두 번째 칵테일 이름)
         } else if (searchMode === "food_recommendation") {
             prompt = `당신은 전문 바텐더입니다. 사용자가 입력한 칵테일(${food})의 맛과 향의 특징을 분석하고, 이와 가장 잘 어울리는 안주 궁합을 2~3가지 추천해 주세요. 
             
+추전 시마다 매번 똑같은 안주를 피하고, 창의적이고 다양한 관점(식사류, 스낵류, 편의점류 등)에서 추천해 주세요.
+
 추천에는 다음 내용이 포함되어야 합니다:
 1. 해당 칵테일의 특징 (짧게)
 2. 추천하는 일반 안주 요리
@@ -79,7 +83,7 @@ COCKTAIL: (두 번째 칵테일 이름)
 
 마크다운 없이 친절하고 위트 있는 대화체로 답변해 주세요.`;
         } else {
-            prompt = `당신은 바텐더입니다. 안주(${food})와 어울리는 칵테일 하나를 마크다운 없이 대화체로 추천해 주세요.`;
+            prompt = `당신은 바텐더입니다. 안주(${food})와 어울리는 칵테일 하나를 마크다운 없이 대화체로 추천해 주세요. 너무 흔한 것보다는 조금 특별한 칵테일을 제안해 주세요.`;
         }
 
         console.log("Chatbot Prompt Length:", prompt.length);
@@ -96,14 +100,25 @@ COCKTAIL: (두 번째 칵테일 이름)
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
-                        temperature: 0.4,
+                         temperature: 0.85, // 다양성을 위해 온도 높임
                         maxOutputTokens: 8192,
                     }
                 }),
             }
         );
 
-        const data = await response.json();
+        let data;
+        let rawResponse = "";
+        try {
+            rawResponse = await response.text();
+            data = JSON.parse(rawResponse);
+        } catch (e) {
+            console.error(`[Gemini API Parse Error] Status: ${response.status}`, rawResponse);
+            return NextResponse.json({ 
+                error: `API Parse Failed (${response.status})`,
+                details: "구글 API 응답 형식이 올바르지 않습니다." 
+            }, { status: 500 });
+        }
 
         if (!response.ok) {
             console.error(`[Gemini API Error] Status: ${response.status}`, JSON.stringify(data));
