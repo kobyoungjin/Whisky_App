@@ -3,7 +3,6 @@
 import React, { useMemo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { RecipeItem, InventoryItem } from "@/types/baserow";
-import { useShoppingList } from "@/hooks/useShoppingList";
 import { isIngredientMatched } from "@/lib/substitute";
 
 interface CocktailDetailModalProps {
@@ -19,7 +18,6 @@ export default function CocktailDetailModal({
     cocktail,
     inventory,
 }: CocktailDetailModalProps) {
-    const { addItem, items: shoppingList } = useShoppingList();
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
@@ -199,7 +197,6 @@ export default function CocktailDetailModal({
                             </h3>
                             <ul className="space-y-4">
                                 {parsedIngredients.map((ing, idx) => {
-                                    const isAlreadyInCart = shoppingList.includes(ing.nameForShopping);
                                     return (
                                         <li key={idx} className="flex items-center justify-between group py-2">
                                             <div className="flex items-center gap-4">
@@ -208,15 +205,6 @@ export default function CocktailDetailModal({
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <span className={`font-semibold text-sm ${ing.hasStock ? "text-on-surface" : "text-outline"}`}>{ing.rawText}</span>
-                                                    {!ing.hasStock && (
-                                                        <button 
-                                                            onClick={(e) => { e.stopPropagation(); addItem(ing.nameForShopping); }}
-                                                            disabled={isAlreadyInCart}
-                                                            className="text-[10px] text-primary font-bold text-left hover:underline disabled:opacity-50"
-                                                        >
-                                                            {isAlreadyInCart ? "장바구니 담김" : "+ 재료 목록에 담기"}
-                                                        </button>
-                                                    )}
                                                 </div>
                                             </div>
                                             {ing.hasStock && <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full uppercase italic">In Bar</span>}

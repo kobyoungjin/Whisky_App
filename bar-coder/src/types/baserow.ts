@@ -6,7 +6,9 @@ export interface InventoryItem {
     volume: number;
     category: { id: number; value: string }; // Baserow Select field format
     notes?: string;
+    image_url?: string; // 커스텀 병 이미지 URL (AI 검색 또는 직접 업로드)
 }
+
 
 export interface RecipeItem {
     id: number;

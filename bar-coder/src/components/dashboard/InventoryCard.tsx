@@ -1,15 +1,14 @@
 import React from "react";
 import { InventoryItem } from "@/types/baserow";
-import { Edit2, Trash2, ShoppingCart } from "lucide-react";
+import { Edit2, Trash2 } from "lucide-react";
 
 interface InventoryCardProps {
     item: InventoryItem;
     onEdit?: (item: InventoryItem) => void;
     onDelete?: (id: number) => void;
-    onAddToShoppingList?: (name: string) => void;
 }
 
-const InventoryCard: React.FC<InventoryCardProps> = ({ item, onEdit, onDelete, onAddToShoppingList }) => {
+const InventoryCard: React.FC<InventoryCardProps> = ({ item, onEdit, onDelete }) => {
     return (
         <div className="bg-surface-container-low border border-outline-variant/10 p-3 rounded-2xl group hover:border-primary/40 transition-all duration-300 flex flex-col gap-2 relative overflow-hidden">
             {/* Background Accent */}
@@ -59,14 +58,6 @@ const InventoryCard: React.FC<InventoryCardProps> = ({ item, onEdit, onDelete, o
                         Delete
                     </button>
                 </div>
- 
-                <button
-                    onClick={() => onAddToShoppingList?.(item.name)}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 hover:bg-primary text-primary hover:text-black text-[9px] font-black uppercase tracking-widest transition-all border border-primary/20"
-                >
-                    <ShoppingCart className="w-3 h-3" />
-                    List
-                </button>
             </div>
         </div>
     );
