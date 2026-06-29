@@ -23,7 +23,7 @@ export async function getInventory(uid: string): Promise<InventoryItem[]> {
     if (!INVENTORY_TABLE_ID) throw new Error("Inventory Table ID is missing.");
     try {
         const response = await axios.get(
-            `${BASEROW_API_URL}/database/rows/table/${INVENTORY_TABLE_ID}/?user_field_names=true&filter__user_uid__equal=${uid}&size=200`,
+            `${BASEROW_API_URL}/database/rows/table/${INVENTORY_TABLE_ID}/?user_field_names=true&filter__user_uid__equal=${uid}&order_by=Order&size=200`,
             { headers: getHeaders() }
         );
         return response.data.results;

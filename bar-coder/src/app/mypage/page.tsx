@@ -7,12 +7,15 @@ import ErrorAlert from "@/components/ui/ErrorAlert";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter, useSearchParams } from "next/navigation";
 import BottleVolumeSlider from "@/components/ui/BottleVolumeSlider";
-import { getInventory, addInventoryItem, getInventoryFields, deleteInventoryItem, updateInventoryItem } from "@/lib/baserow";
+import { getInventory, addInventoryItem, getInventoryFields, deleteInventoryItem, updateInventoryItem, uploadFile } from "@/lib/baserow";
 import { updateProfile } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 import { InventoryItem } from "@/types/baserow";
 import { LogOut, Check, Trash2, Settings, X, Plus, Beaker, Wine, Droplets, ChevronDown, ExternalLink } from "lucide-react";
+import { DndContext, closestCenter, PointerSensor, TouchSensor, KeyboardSensor, useSensor, useSensors, DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, rectSortingStrategy, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 function MyPageContent() {
     const { user, logOut, loading: authLoading } = useAuth();
@@ -41,18 +44,23 @@ function MyPageContent() {
     const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
 
     // Form State
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<{
+        name: string;
+        abv: number;
+        volume: number;
+        category: string;
+        image: { url: string; name?: string }[];
+    }>({
         name: "",
         abv: 40,
         volume: 700,
         category: "위스키",
-        imageUrl: "",
+        image: [],
     });
 
-    // 이미지 검색/업로드 State
-    const [isSearchingImage, setIsSearchingImage] = useState(false);
-    const [imageSearchResults, setImageSearchResults] = useState<{ url: string; thumbnail: string; title: string }[]>([]);
+    // 이미지 업로드 State
     const [isUploadingImage, setIsUploadingImage] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState<string>("");
     const imageFileInputRef = useRef<HTMLInputElement>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -109,7 +117,7 @@ function MyPageContent() {
                         category: decoded.category || prev.category,
                         abv: typeof decoded.abv === "number" ? decoded.abv : prev.abv,
                         volume: typeof decoded.volume === "number" ? decoded.volume : prev.volume,
-                        imageUrl: "",
+                        image: [],
                     }));
                     setIsAddModalOpen(true);
                     window.history.replaceState(null, "", "/mypage");
@@ -181,49 +189,33 @@ function MyPageContent() {
             setFormData(prev => ({
                 ...prev,
                 category: activeInventoryTab === "base" ? "위스키" : activeInventoryTab === "liqueur" ? "리큐르" : "시럽",
-                imageUrl: "",
+                image: [],
             }));
         }
     }, [activeInventoryTab, editingItem, isAddModalOpen]);
 
-    // 이미지 AI 검색
-    const handleImageSearch = async () => {
-        if (!formData.name.trim()) {
-            alert("이름을 먼저 입력해주세요.");
-            return;
-        }
-        setIsSearchingImage(true);
-        setImageSearchResults([]);
-        try {
-            const res = await fetch(`/api/search-bottle-image?q=${encodeURIComponent(formData.name)}`);
-            const data = await res.json();
-            setImageSearchResults(data.images || []);
-            if (!data.images || data.images.length === 0) {
-                alert("이미지를 찾지 못했습니다. 직접 업로드해 주세요.");
-            }
-        } catch (e) {
-            alert("이미지 검색 중 오류가 발생했습니다.");
-        } finally {
-            setIsSearchingImage(false);
-        }
-    };
-
-    // 이미지 직접 업로드 (Firebase Storage)
+    // 이미지 업로드: 배경 제거 → Baserow 업로드
     const handleBottleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files || !e.target.files[0] || !user) return;
+        if (!e.target.files || !e.target.files[0]) return;
         const file = e.target.files[0];
         setIsUploadingImage(true);
+        setUploadProgress("배경 제거 모델 로딩 중…");
         try {
-            const storageRef = ref(storage, `bottle-images/${user.uid}_${Date.now()}_${file.name}`);
-            await uploadBytes(storageRef, file);
-            const downloadUrl = await getDownloadURL(storageRef);
-            setFormData(prev => ({ ...prev, imageUrl: downloadUrl }));
-            setImageSearchResults([]);
+            // Dynamic import: heavy WASM bundle only loaded on demand
+            const { removeBackground } = await import("@imgly/background-removal");
+            setUploadProgress("배경 제거 중…");
+            const blob = await removeBackground(file);
+            setUploadProgress("Baserow 업로드 중…");
+            const processedName = file.name.replace(/\.[^.]+$/, "") + "_nobg.png";
+            const processedFile = new File([blob], processedName, { type: "image/png" });
+            const uploaded = await uploadFile(processedFile);
+            setFormData(prev => ({ ...prev, image: [{ url: uploaded.url, name: uploaded.name }] }));
         } catch (err) {
-            console.error("Bottle image upload failed:", err);
-            alert("이미지 업로드 중 오류가 발생했습니다.");
+            console.error("Image processing/upload failed:", err);
+            alert("이미지 처리 중 오류가 발생했습니다.");
         } finally {
             setIsUploadingImage(false);
+            setUploadProgress("");
             if (imageFileInputRef.current) imageFileInputRef.current.value = "";
         }
     };
@@ -301,13 +293,12 @@ function MyPageContent() {
     // --- Action Handlers ---
     const handleEdit = (item: InventoryItem) => {
         setEditingItem(item);
-        setImageSearchResults([]);
         setFormData({
             name: item.name,
             abv: item.abv,
             volume: item.volume,
             category: item.category?.value || (activeInventoryTab === "base" ? "위스키" : activeInventoryTab === "liqueur" ? "리큐르" : "시럽"),
-            imageUrl: item.image_url || "",
+            image: Array.isArray(item.image) ? item.image.map(f => ({ url: f.url, name: f.name })) : [],
         });
     };
 
@@ -346,24 +337,28 @@ function MyPageContent() {
                 throw new Error("도수 또는 용량 값이 유효하지 않습니다.");
             }
 
+            // Baserow file field expects [{ name: "<uploaded-name>" }, ...]
+            const imagePayload = formData.image.length > 0
+                ? formData.image.filter(f => f.name).map(f => ({ name: f.name as string }))
+                : [];
+
             const payload = {
                 name: formData.name.trim(),
                 abv: abv,
                 volume: volume,
                 category: categoryValue as any,
-                image_url: formData.imageUrl || undefined,
+                image: imagePayload,
             };
 
             if (editingItem) {
-                await updateInventoryItem(editingItem.id, payload);
+                await updateInventoryItem(editingItem.id, payload as any);
                 setEditingItem(null);
             } else {
                 await addInventoryItem(user.uid, payload as any);
                 setIsAddModalOpen(false);
             }
 
-            setFormData({ ...formData, name: "", abv: 40, volume: 700, imageUrl: "" }); // Reset form
-            setImageSearchResults([]);
+            setFormData({ ...formData, name: "", abv: 40, volume: 700, image: [] }); // Reset form
             await fetchData(); // Refresh list
         } catch (err: any) {
             console.error("Form submission failed:", err);
@@ -373,6 +368,15 @@ function MyPageContent() {
         }
     };
 
+    // Drag-and-drop sensors: pointer + touch both supported.
+    // activationConstraint avoids triggering drag on simple click/tap.
+    // NOTE: must run unconditionally before any early return (Rules of Hooks).
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+        useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    );
+
     if (authLoading || !user) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-[#1a1a1a]">
@@ -381,12 +385,45 @@ function MyPageContent() {
         );
     }
 
-    // 4개씩 줄바꿈하여 선반에 배치하기 위한 계산
-    const size = 4;
-    const inventoryRows = [];
-    for (let i = 0; i < filteredInventory.length; i += size) {
-        inventoryRows.push(filteredInventory.slice(i, i + size));
-    }
+    const handleDragEnd = async (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id) return;
+
+        const oldIdx = filteredInventory.findIndex(it => it.id === active.id);
+        const newIdx = filteredInventory.findIndex(it => it.id === over.id);
+        if (oldIdx === -1 || newIdx === -1) return;
+
+        const reordered = arrayMove(filteredInventory, oldIdx, newIdx);
+
+        // Reuse existing Order values from the active tab, sorted ascending,
+        // and reassign them to items in the new sequence.
+        // Items elsewhere (other tabs) are untouched.
+        const tabOrders = filteredInventory.map(it => it.Order ?? 0).sort((a, b) => a - b);
+        const newOrderById = new Map<number, number>();
+        reordered.forEach((item, i) => newOrderById.set(item.id, tabOrders[i]));
+
+        // Optimistic local update
+        const updatedInventory = inventory.map(it =>
+            newOrderById.has(it.id) ? { ...it, Order: newOrderById.get(it.id) } : it
+        ).sort((a, b) => (a.Order ?? 0) - (b.Order ?? 0));
+        setInventory(updatedInventory);
+
+        // Persist only changed rows
+        const changed: { id: number; Order: number }[] = [];
+        filteredInventory.forEach(orig => {
+            const newOrder = newOrderById.get(orig.id);
+            if (newOrder !== undefined && newOrder !== orig.Order) {
+                changed.push({ id: orig.id, Order: newOrder });
+            }
+        });
+        try {
+            await Promise.all(changed.map(c => updateInventoryItem(c.id, { Order: c.Order } as any)));
+        } catch (err) {
+            console.error("Failed to persist new order:", err);
+            // Re-fetch to recover authoritative state
+            fetchData();
+        }
+    };
 
 
 
@@ -483,53 +520,31 @@ function MyPageContent() {
                             {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
                         </div>
                     ) : filteredInventory.length > 0 ? (
-                        <div className="flex flex-col gap-14 mt-2">
-                            {inventoryRows.map((row, rowIndex) => (
-                                <div key={rowIndex} className="relative flex flex-col items-center">
-                                    {/* Bottles placed on the shelf */}
-                                    <div className="flex justify-around items-end w-full px-4 min-h-[120px] pb-1 z-10 gap-2">
-                                        {row.map((item) => {
-                                            const bottleImg = getBottleImage(item);
-                                            return (
-                                                <div 
-                                                    key={item.id} 
-                                                    className="relative group cursor-pointer flex flex-col items-center justify-end"
-                                                    onClick={() => setSelectedBottleInfo(item)}
-                                                >
-                                                    {bottleImg === "generic" ? (
-                                                        <div className="hover:scale-105 hover:-translate-y-1 transition-all duration-300">
-                                                            <GenericBottle category={item.category?.value || ""} name={item.name} abv={item.abv} />
-                                                        </div>
-                                                    ) : (
-                                                        <img 
-                                                            src={bottleImg} 
-                                                            alt={item.name} 
-                                                            className="h-28 sm:h-32 object-contain hover:scale-105 hover:-translate-y-1.5 transition-all duration-300 drop-shadow-[0_10px_12px_rgba(0,0,0,0.6)]" 
-                                                        />
-                                                    )}
-                                                    {/* Tooltip for hover */}
-                                                    <div className="absolute -top-10 bg-black/90 border border-primary/20 text-white text-[9px] px-2 py-1 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-30 shadow-lg">
-                                                        {item.name} ({item.abv}%)
-                                                    </div>
-                                                    {/* Bottle label text below shelf */}
-                                                    <span className="text-[9px] text-on-surface-variant/70 font-black truncate max-w-[65px] sm:max-w-[80px] text-center mt-2.5 block select-none uppercase tracking-tighter">
-                                                        {item.name}
-                                                    </span>
+                        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                            <SortableContext items={filteredInventory.map(it => it.id)} strategy={rectSortingStrategy}>
+                                <div className="grid grid-cols-4 gap-x-2 gap-y-3 mt-2">
+                                    {filteredInventory.flatMap((item, idx) => {
+                                        const nodes: React.ReactNode[] = [
+                                            <SortableBottle
+                                                key={item.id}
+                                                item={item}
+                                                onOpenInfo={() => setSelectedBottleInfo(item)}
+                                            />
+                                        ];
+                                        // After every 4th item, append a shelf line spanning the full row.
+                                        if ((idx + 1) % 4 === 0 || idx === filteredInventory.length - 1) {
+                                            nodes.push(
+                                                <div key={`shelf-${idx}`} className="col-span-4 relative">
+                                                    <div className="w-full h-4 bg-gradient-to-b from-[#8c6239] via-[#6d4827] to-[#4d3016] border-t border-[#a67c52] border-b border-[#2d1c0d] rounded-sm shadow-[0_8px_16px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.15)]" />
+                                                    <div className="w-full h-8 bg-gradient-to-b from-black/50 to-transparent -mt-0.5 pointer-events-none" />
                                                 </div>
                                             );
-                                        })}
-                                        {/* Blank bottles to maintain spacing */}
-                                        {Array.from({ length: 4 - row.length }).map((_, idx) => (
-                                            <div key={idx} className="w-14 h-28 invisible" />
-                                        ))}
-                                    </div>
-                                    {/* 3D Wood Shelf line */}
-                                    <div className="w-full h-4 bg-gradient-to-b from-[#8c6239] via-[#6d4827] to-[#4d3016] border-t border-[#a67c52] border-b border-[#2d1c0d] rounded-sm shadow-[0_8px_16px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.15)]" />
-                                    {/* Shelf shadow underneath */}
-                                    <div className="w-full h-8 bg-gradient-to-b from-black/50 to-transparent -mt-0.5 pointer-events-none" />
+                                        }
+                                        return nodes;
+                                    })}
                                 </div>
-                            ))}
-                        </div>
+                            </SortableContext>
+                        </DndContext>
                     ) : (
                         <div className="py-24 text-center text-[#6b6761] flex flex-col items-center justify-center">
                             <span className="text-5xl mb-4 opacity-25">🍾</span>
@@ -686,7 +701,11 @@ function MyPageContent() {
                         {getBottleImage(selectedBottleInfo) === "generic" ? (
                             <GenericBottle category={selectedBottleInfo.category?.value || ""} name={selectedBottleInfo.name} abv={selectedBottleInfo.abv} />
                         ) : (
-                            <img src={getBottleImage(selectedBottleInfo)} alt={selectedBottleInfo.name} className="h-32 object-contain drop-shadow-[0_10px_15px_rgba(0,0,0,0.5)]" />
+                            <BottleImage
+                                src={getBottleImage(selectedBottleInfo)}
+                                item={selectedBottleInfo}
+                                className="h-32 object-contain drop-shadow-[0_10px_15px_rgba(0,0,0,0.5)]"
+                            />
                         )}
                     </div>
 
@@ -718,7 +737,7 @@ function MyPageContent() {
 
         {/* Add/Edit Inventory Modal (Placed outside transformed container to fix viewport positioning) */}
         {(isAddModalOpen || editingItem) && (
-            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#0a0a0a]/80 backdrop-blur-2xl animate-fade-in" onClick={() => { setIsAddModalOpen(false); setEditingItem(null); setFormData({ name: "", abv: 40, volume: 700, category: "위스키", imageUrl: "" }); setImageSearchResults([]); }}>
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#0a0a0a]/80 backdrop-blur-2xl animate-fade-in" onClick={() => { setIsAddModalOpen(false); setEditingItem(null); setFormData({ name: "", abv: 40, volume: 700, category: "위스키", image: [] }); }}>
                 <div className="w-full max-w-sm bg-[#131110] rounded-[2.5rem] border border-outline-variant/10 p-5 sm:p-6 shadow-2xl relative overflow-hidden" onClick={e => e.stopPropagation()}>
                     <div className="absolute -top-32 -right-32 w-64 h-64 bg-primary/10 blur-[100px] rounded-full mix-blend-screen pointer-events-none" />
                     <div className="absolute -bottom-32 -left-32 w-64 h-64 bg-primary/10 blur-[100px] rounded-full mix-blend-screen pointer-events-none" />
@@ -728,7 +747,7 @@ function MyPageContent() {
                             {editingItem ? "Refine Spirit" : "Curate Selection"}
                         </h3>
                         <button
-                            onClick={() => { setIsAddModalOpen(false); setEditingItem(null); setFormData({ name: "", abv: 40, volume: 700, category: "위스키", imageUrl: "" }); setImageSearchResults([]); }}
+                            onClick={() => { setIsAddModalOpen(false); setEditingItem(null); setFormData({ name: "", abv: 40, volume: 700, category: "위스키", image: [] }); }}
                             className="p-2 rounded-full hover:bg-white/5 transition-colors border border-outline-variant/10 bg-surface-container-low"
                         >
                             <X className="w-4 h-4 text-on-surface-variant" />
@@ -795,13 +814,23 @@ function MyPageContent() {
                         <div className="bg-surface-container-low/30 backdrop-blur-sm p-4 rounded-3xl border border-outline-variant/10 leading-none space-y-3">
                             <label className="block text-[9px] text-primary uppercase tracking-[0.3em] font-black px-1 mb-2.5">Bottle Image</label>
 
-                            {/* 이미지 프리뷰 */}
-                            {formData.imageUrl && (
+                            {/* 이미지 프리뷰 (배경 제거된 PNG) */}
+                            {formData.image[0]?.url && (
                                 <div className="relative flex justify-center mb-2">
-                                    <img src={formData.imageUrl} alt="bottle preview" className="h-24 object-contain drop-shadow-lg rounded-xl bg-black/20 p-1" />
+                                    <div
+                                        className="h-24 w-24 rounded-xl"
+                                        style={{
+                                            backgroundImage: "linear-gradient(45deg, #2a2a2a 25%, transparent 25%), linear-gradient(-45deg, #2a2a2a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #2a2a2a 75%), linear-gradient(-45deg, transparent 75%, #2a2a2a 75%)",
+                                            backgroundSize: "12px 12px",
+                                            backgroundPosition: "0 0, 0 6px, 6px -6px, -6px 0px",
+                                            backgroundColor: "#1a1a1a"
+                                        }}
+                                    >
+                                        <img src={formData.image[0].url} alt="bottle preview" className="h-full w-full object-contain drop-shadow-lg" />
+                                    </div>
                                     <button
                                         type="button"
-                                        onClick={() => setFormData(prev => ({ ...prev, imageUrl: "" }))}
+                                        onClick={() => setFormData(prev => ({ ...prev, image: [] }))}
                                         className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-all shadow-lg"
                                     >
                                         <X className="w-3 h-3" />
@@ -809,71 +838,35 @@ function MyPageContent() {
                                 </div>
                             )}
 
-                            {/* 액션 버튼 열 */}
-                            <div className="flex gap-2">
-                                {/* AI 검색 버튼 */}
-                                <button
-                                    type="button"
-                                    onClick={handleImageSearch}
-                                    disabled={isSearchingImage}
-                                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-primary/10 border border-primary/30 hover:bg-primary/20 text-primary text-[10px] font-bold tracking-wide transition-all disabled:opacity-50"
-                                >
-                                    {isSearchingImage ? (
+                            {/* 업로드 버튼 — 배경 자동 제거 */}
+                            <button
+                                type="button"
+                                onClick={() => imageFileInputRef.current?.click()}
+                                disabled={isUploadingImage}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/30 hover:bg-primary/20 text-primary text-[11px] font-bold tracking-wide transition-all disabled:opacity-50"
+                            >
+                                {isUploadingImage ? (
+                                    <>
                                         <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                                    ) : (
-                                        <span>✨</span>
-                                    )}
-                                    AI 검색
-                                </button>
-
-                                {/* 직접 업로드 버튼 */}
-                                <button
-                                    type="button"
-                                    onClick={() => imageFileInputRef.current?.click()}
-                                    disabled={isUploadingImage}
-                                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-surface-variant/20 border border-outline-variant/20 hover:bg-surface-variant/40 text-on-surface-variant text-[10px] font-bold tracking-wide transition-all disabled:opacity-50"
-                                >
-                                    {isUploadingImage ? (
-                                        <div className="w-3 h-3 border-2 border-on-surface-variant border-t-transparent rounded-full animate-spin" />
-                                    ) : (
+                                        <span>{uploadProgress || "처리 중…"}</span>
+                                    </>
+                                ) : (
+                                    <>
                                         <span>📁</span>
-                                    )}
-                                    직접 업로드
-                                </button>
-                                <input
-                                    ref={imageFileInputRef}
-                                    type="file"
-                                    accept="image/*"
-                                    className="hidden"
-                                    onChange={handleBottleImageUpload}
-                                />
-                            </div>
-
-                            {/* AI 검색 결과 */}
-                            {imageSearchResults.length > 0 && (
-                                <div className="mt-2">
-                                    <p className="text-[9px] text-on-surface-variant/50 uppercase tracking-widest mb-2">선택하세요</p>
-                                    <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                                        {imageSearchResults.map((img, idx) => (
-                                            <button
-                                                key={idx}
-                                                type="button"
-                                                onClick={() => { setFormData(prev => ({ ...prev, imageUrl: img.url })); setImageSearchResults([]); }}
-                                                className={`shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition-all hover:scale-105 ${
-                                                    formData.imageUrl === img.url ? "border-primary shadow-[0_0_10px_rgba(212,168,67,0.5)]" : "border-outline-variant/20 hover:border-primary/50"
-                                                }`}
-                                            >
-                                                <img
-                                                    src={img.thumbnail}
-                                                    alt={img.title}
-                                                    className="w-full h-full object-cover"
-                                                    onError={(e) => { (e.target as HTMLImageElement).src = "/bottle-placeholder.png" }}
-                                                />
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+                                        <span>이미지 업로드 (배경 자동 제거)</span>
+                                    </>
+                                )}
+                            </button>
+                            <input
+                                ref={imageFileInputRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleBottleImageUpload}
+                            />
+                            <p className="text-[9px] text-on-surface-variant/40 px-1 leading-relaxed">
+                                업로드한 사진에서 병 모양만 자동으로 잘라내 투명 PNG로 저장합니다. 첫 사용 시 모델 다운로드(~50MB)가 발생하며 이후엔 캐시됩니다.
+                            </p>
                         </div>
 
                         {/* 병 모양의 인터랙티브 보틀 슬라이더 (좌우 정보 통합) */}
@@ -1058,332 +1051,79 @@ function MyPageContent() {
     );
 }
 
-// 브랜드별 보틀 이미지 매핑 함수
 const getBottleImage = (item: InventoryItem) => {
-    // 1순위: 사용자가 직접 설정한 이미지 (AI 검색 또는 직접 업로드)
-    if (item.image_url) return item.image_url;
-
-    const name = item.name.toLowerCase();
-
-    // ────────────────────────────────────────
-    // 스카치 싱글몰트
-    // ────────────────────────────────────────
-    if (name.includes("macallan") || name.includes("맥캘란")) {
-        return "https://images.whisky.fr/20/images_produits/15234_p.png";
-    }
-    if (name.includes("laphroaig") || name.includes("라프로익")) {
-        return "https://images.whisky.fr/20/images_produits/10403_p.png";
-    }
-    if (name.includes("glenfiddich") || name.includes("글렌피딕")) {
-        return "https://images.whisky.fr/20/images_produits/10292_p.png";
-    }
-    if (name.includes("talisker") || name.includes("탈리스커")) {
-        return "https://images.whisky.fr/20/images_produits/10636_p.png";
-    }
-    if (name.includes("balvenie") || name.includes("발베니")) {
-        return "https://images.whisky.fr/20/images_produits/10103_p.png";
-    }
-    if (name.includes("aberlour") || name.includes("아벨라워")) {
-        return "https://images.whisky.fr/20/images_produits/8981_p.png";
-    }
-    if (name.includes("jura") || name.includes("주라")) {
-        return "https://images.whisky.fr/20/images_produits/54257_p.png";
-    }
-    if (name.includes("glenlivet") || name.includes("글렌리벳")) {
-        return "https://images.whisky.fr/20/images_produits/10310_p.png";
-    }
-    if (name.includes("glenmorangie") || name.includes("글렌모렌지")) {
-        return "https://images.whisky.fr/20/images_produits/10319_p.png";
-    }
-    if (name.includes("dalmore") || name.includes("달모어")) {
-        return "https://images.whisky.fr/20/images_produits/10224_p.png";
-    }
-    if (name.includes("highland park") || name.includes("하이랜드파크") || name.includes("하이랜드 파크")) {
-        return "https://images.whisky.fr/20/images_produits/10350_p.png";
-    }
-    if (name.includes("springbank") || name.includes("스프링뱅크")) {
-        return "https://images.whisky.fr/20/images_produits/10607_p.png";
-    }
-    if (name.includes("bowmore") || name.includes("보우모어")) {
-        return "https://images.whisky.fr/20/images_produits/10138_p.png";
-    }
-    if (name.includes("ardbeg") || name.includes("아드벡")) {
-        return "https://images.whisky.fr/20/images_produits/10058_p.png";
-    }
-    if (name.includes("bruichladdich") || name.includes("브룩라디")) {
-        return "https://images.whisky.fr/20/images_produits/10152_p.png";
-    }
-    if (name.includes("glen grant") || name.includes("글렌 그란트")) {
-        return "https://images.whisky.fr/20/images_produits/10282_p.png";
-    }
-    if (name.includes("oban") || name.includes("오반")) {
-        return "https://images.whisky.fr/20/images_produits/10488_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 블렌디드 스카치
-    // ────────────────────────────────────────
-    if (name.includes("ballantine") || name.includes("발렌타인")) {
-        return "https://images.whisky.fr/20/images_produits/10095_p.png";
-    }
-    if (name.includes("chivas") || name.includes("시바스")) {
-        return "https://images.whisky.fr/20/images_produits/10183_p.png";
-    }
-    if (name.includes("johnnie walker") || name.includes("조니워커") || name.includes("조니 워커")) {
-        return "https://images.whisky.fr/20/images_produits/10374_p.png";
-    }
-    if (name.includes("dewar") || name.includes("듀어")) {
-        return "https://images.whisky.fr/20/images_produits/10232_p.png";
-    }
-    if (name.includes("famous grouse") || name.includes("페이머스그라우스")) {
-        return "https://images.whisky.fr/20/images_produits/10249_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 아이리쉬 위스키
-    // ────────────────────────────────────────
-    if (name.includes("jameson") || name.includes("제임슨")) {
-        return "https://images.whisky.fr/20/images_produits/11084_p.png";
-    }
-    if (name.includes("bushmills") || name.includes("부시밀스")) {
-        return "https://images.whisky.fr/20/images_produits/11042_p.png";
-    }
-    if (name.includes("redbreast") || name.includes("레드브레스트")) {
-        return "https://images.whisky.fr/20/images_produits/11144_p.png";
-    }
-    if (name.includes("green spot") || name.includes("그린 스팟")) {
-        return "https://images.whisky.fr/20/images_produits/11074_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 아메리칸 버번 / 라이
-    // ────────────────────────────────────────
-    if (name.includes("jack daniel") || name.includes("잭다니엘") || name.includes("잭 다니엘")) {
-        return "https://images.whisky.fr/20/images_produits/10363_p.png";
-    }
-    if (name.includes("makers") || name.includes("메이커스")) {
-        return "https://images.whisky.fr/20/images_produits/10424_p.png";
-    }
-    if (name.includes("wild turkey") || name.includes("와일드터키") || name.includes("와일드 터키")) {
-        return "https://images.whisky.fr/20/images_produits/10688_p.png";
-    }
-    if (name.includes("russell") || name.includes("러셀")) {
-        // Russell's Reserve (Wild Turkey 산하)
-        return "https://images.whisky.fr/20/images_produits/10692_p.png";
-    }
-    if (name.includes("woodford") || name.includes("우드포드")) {
-        return "https://images.whisky.fr/20/images_produits/10710_p.png";
-    }
-    if (name.includes("buffalo trace") || name.includes("버팔로 트레이스") || name.includes("버팔로트레이스")) {
-        return "https://images.whisky.fr/20/images_produits/10156_p.png";
-    }
-    if (name.includes("blantons") || name.includes("블랜튼") || name.includes("blanton")) {
-        return "https://images.whisky.fr/20/images_produits/10120_p.png";
-    }
-    if (name.includes("four roses") || name.includes("포로지스") || name.includes("포 로지스")) {
-        return "https://images.whisky.fr/20/images_produits/10258_p.png";
-    }
-    if (name.includes("knob creek") || name.includes("놉크릭")) {
-        return "https://images.whisky.fr/20/images_produits/10384_p.png";
-    }
-    if (name.includes("elijah") || name.includes("엘라이자")) {
-        return "https://images.whisky.fr/20/images_produits/10241_p.png";
-    }
-    if (name.includes("michter") || name.includes("믹터스")) {
-        return "https://images.whisky.fr/20/images_produits/10466_p.png";
-    }
-    if (name.includes("jim beam") || name.includes("짐빔") || name.includes("짐 빔")) {
-        return "https://images.whisky.fr/20/images_produits/10368_p.png";
-    }
-    if (name.includes("evan williams") || name.includes("에반 윌리엄스")) {
-        return "https://images.whisky.fr/20/images_produits/10247_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 일본 위스키
-    // ────────────────────────────────────────
-    if (name.includes("yamazaki") || name.includes("야마자키")) {
-        return "https://images.whisky.fr/20/images_produits/12024_p.png";
-    }
-    if (name.includes("hibiki") || name.includes("히비키")) {
-        return "https://images.whisky.fr/20/images_produits/11964_p.png";
-    }
-    if (name.includes("hakushu") || name.includes("하쿠슈") || name.includes("백주")) {
-        return "https://images.whisky.fr/20/images_produits/11968_p.png";
-    }
-    if (name.includes("nikka") || name.includes("닛카")) {
-        return "https://images.whisky.fr/20/images_produits/12004_p.png";
-    }
-    if (name.includes("toki") || name.includes("토키")) {
-        return "https://images.whisky.fr/20/images_produits/12028_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 코냑 / 브랜디
-    // ────────────────────────────────────────
-    if (name.includes("camus") || name.includes("까뮤") || name.includes("카뮤")) {
-        // Camus XO 계열 (롱넥 포함)
-        return "https://images.whisky.fr/20/images_produits/13204_p.png";
-    }
-    if (name.includes("hennessy") || name.includes("헤네시")) {
-        return "https://images.whisky.fr/20/images_produits/13214_p.png";
-    }
-    if (name.includes("remy martin") || name.includes("레미 마틴") || name.includes("레미마틴")) {
-        return "https://images.whisky.fr/20/images_produits/13236_p.png";
-    }
-    if (name.includes("martell") || name.includes("마르텔")) {
-        return "https://images.whisky.fr/20/images_produits/13220_p.png";
-    }
-    if (name.includes("courvoisier") || name.includes("쿠르부아지에")) {
-        return "https://images.whisky.fr/20/images_produits/13207_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 테킬라
-    // ────────────────────────────────────────
-    if (name.includes("jose cuervo") || name.includes("호세 쿠엘보") || name.includes("호세쿠엘보")) {
-        return "https://images.whisky.fr/20/images_produits/13511_p.png";
-    }
-    if (name.includes("patron") || name.includes("패트론")) {
-        return "https://images.whisky.fr/20/images_produits/13530_p.png";
-    }
-    if (name.includes("don julio") || name.includes("돈 훌리오")) {
-        return "https://images.whisky.fr/20/images_produits/13505_p.png";
-    }
-    if (name.includes("1800") || name.includes("테킬라 1800")) {
-        return "https://images.whisky.fr/20/images_produits/13501_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 진 (Gin)
-    // ────────────────────────────────────────
-    if (name.includes("hendrick") || name.includes("핸드릭스")) {
-        return "https://images.whisky.fr/20/images_produits/13813_p.png";
-    }
-    if (name.includes("bombay") || name.includes("봄베이")) {
-        return "https://images.whisky.fr/20/images_produits/13803_p.png";
-    }
-    if (name.includes("tanqueray") || name.includes("탱커레이")) {
-        return "https://images.whisky.fr/20/images_produits/13841_p.png";
-    }
-    if (name.includes("gordon") || name.includes("고든")) {
-        return "https://images.whisky.fr/20/images_produits/13807_p.png";
-    }
-    if (name.includes("beefeater") || name.includes("비피터")) {
-        return "https://images.whisky.fr/20/images_produits/13801_p.png";
-    }
-    if (name.includes("monkey 47") || name.includes("몽키 47") || name.includes("몽키47")) {
-        return "https://images.whisky.fr/20/images_produits/13830_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 보드카
-    // ────────────────────────────────────────
-    if (name.includes("absolut") || name.includes("앱솔루트")) {
-        return "https://images.whisky.fr/20/images_produits/13012_p.png";
-    }
-    if (name.includes("grey goose") || name.includes("그레이 구스") || name.includes("그레이구스")) {
-        return "https://images.whisky.fr/20/images_produits/13024_p.png";
-    }
-    if (name.includes("belvedere") || name.includes("벨베데레")) {
-        return "https://images.whisky.fr/20/images_produits/13003_p.png";
-    }
-    if (name.includes("smirnoff") || name.includes("스미노프")) {
-        return "https://images.whisky.fr/20/images_produits/13048_p.png";
-    }
-    if (name.includes("ketel one") || name.includes("케텔 원")) {
-        return "https://images.whisky.fr/20/images_produits/13028_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 럼
-    // ────────────────────────────────────────
-    if (name.includes("bacardi") || name.includes("바카디")) {
-        return "https://images.whisky.fr/20/images_produits/13106_p.png";
-    }
-    if (name.includes("diplomatico") || name.includes("디플로마티코")) {
-        return "https://images.whisky.fr/20/images_produits/13112_p.png";
-    }
-    if (name.includes("havana") || name.includes("하바나")) {
-        return "https://images.whisky.fr/20/images_produits/13118_p.png";
-    }
-    if (name.includes("captain morgan") || name.includes("캡틴 모건")) {
-        return "https://images.whisky.fr/20/images_produits/13108_p.png";
-    }
-    if (name.includes("malibu") || name.includes("말리부")) {
-        return "https://images.whisky.fr/20/images_produits/13636_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 리큐르
-    // ────────────────────────────────────────
-    if (name.includes("campari") || name.includes("캄파리")) {
-        return "https://images.whisky.fr/20/images_produits/13603_p.png";
-    }
-    if (name.includes("kahlua") || name.includes("깔루아")) {
-        return "https://images.whisky.fr/20/images_produits/13627_p.png";
-    }
-    if (name.includes("baileys") || name.includes("베일리스") || name.includes("베일리")) {
-        return "https://images.whisky.fr/20/images_produits/13601_p.png";
-    }
-    if (name.includes("cointreau") || name.includes("코앵트로")) {
-        return "https://images.whisky.fr/20/images_produits/13609_p.png";
-    }
-    if (name.includes("grand marnier") || name.includes("그랜드 마르니에")) {
-        return "https://images.whisky.fr/20/images_produits/13619_p.png";
-    }
-    if (name.includes("aperol") || name.includes("아페롤")) {
-        return "https://images.whisky.fr/20/images_produits/13600_p.png";
-    }
-    if (name.includes("midori") || name.includes("미도리")) {
-        return "https://images.whisky.fr/20/images_produits/13645_p.png";
-    }
-    if (name.includes("drambuie") || name.includes("드람부이")) {
-        return "https://images.whisky.fr/20/images_produits/13614_p.png";
-    }
-    if (name.includes("amaretto") || name.includes("아마레또") || name.includes("디사론노") || name.includes("disaronno")) {
-        return "https://images.whisky.fr/20/images_produits/13600_p.png";
-    }
-    if (name.includes("peach") || name.includes("피치")) {
-        return "https://images.whisky.fr/20/images_produits/13654_p.png";
-    }
-    if (name.includes("chartreuse") || name.includes("샤르트뢰즈")) {
-        return "https://images.whisky.fr/20/images_produits/13607_p.png";
-    }
-    if (name.includes("benedictine") || name.includes("베네딕틴")) {
-        return "https://images.whisky.fr/20/images_produits/13602_p.png";
-    }
-    if (name.includes("frangelico") || name.includes("프란젤리코")) {
-        return "https://images.whisky.fr/20/images_produits/13617_p.png";
-    }
-    if (name.includes("limoncello") || name.includes("리몬첼로")) {
-        return "https://images.whisky.fr/20/images_produits/13633_p.png";
-    }
-
-    // ────────────────────────────────────────
-    // 제네릭 카테고리 폴백
-    // ────────────────────────────────────────
-    if (name.includes("tequila") || name.includes("테킬라") || name.includes("데킬라")) {
-        return "https://images.whisky.fr/20/images_produits/13511_p.png";
-    }
-    if (name.includes("rum") || name.includes("럼")) {
-        return "https://images.whisky.fr/20/images_produits/13106_p.png";
-    }
-    if (name.includes("gin") || name.includes("진")) {
-        return "https://images.whisky.fr/20/images_produits/13803_p.png";
-    }
-    if (name.includes("vodka") || name.includes("보드카")) {
-        return "https://images.whisky.fr/20/images_produits/13012_p.png";
-    }
-    if (name.includes("cognac") || name.includes("꼬냑") || name.includes("코냑") || name.includes("브랜디")) {
-        return "https://images.whisky.fr/20/images_produits/13214_p.png";
-    }
-
+    if (Array.isArray(item.image) && item.image[0]?.url) return item.image[0].url;
     return "generic";
 };
 
 
+// Sortable wrapper for one bottle on the shelf — uses @dnd-kit's useSortable.
+const SortableBottle: React.FC<{
+    item: InventoryItem;
+    onOpenInfo: () => void;
+}> = ({ item, onOpenInfo }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+    const style: React.CSSProperties = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.6 : 1,
+        zIndex: isDragging ? 20 : undefined,
+        touchAction: "none",
+    };
+    const bottleImg = getBottleImage(item);
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
+            onClick={(e) => {
+                // Only treat as click when not at the end of a drag gesture.
+                if (!isDragging) onOpenInfo();
+            }}
+            className="relative group cursor-grab active:cursor-grabbing flex flex-col items-center justify-end min-h-[120px] select-none"
+        >
+            {bottleImg === "generic" ? (
+                <div className="transition-transform duration-200 group-hover:-translate-y-1">
+                    <GenericBottle category={item.category?.value || ""} name={item.name} abv={item.abv} />
+                </div>
+            ) : (
+                <BottleImage
+                    src={bottleImg}
+                    item={item}
+                    className="h-28 sm:h-32 object-contain transition-transform duration-200 group-hover:-translate-y-1 drop-shadow-[0_10px_12px_rgba(0,0,0,0.6)] pointer-events-none"
+                />
+            )}
+            <div className="absolute -top-10 bg-black/90 border border-primary/20 text-white text-[9px] px-2 py-1 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-30 shadow-lg">
+                {item.name} ({item.abv}%)
+            </div>
+            <span className="text-[9px] text-on-surface-variant/70 font-black truncate max-w-[65px] sm:max-w-[80px] text-center mt-2.5 block select-none uppercase tracking-tighter">
+                {item.name}
+            </span>
+        </div>
+    );
+};
+
 // 매핑되지 않은 술을 위한 커스텀 스타일 SVG 술병 컴포넌트
+const BottleImage: React.FC<{
+    src: string;
+    item: InventoryItem;
+    className?: string;
+}> = ({ src, item, className }) => {
+    const [errored, setErrored] = useState(false);
+    if (errored) {
+        return <GenericBottle category={item.category?.value || ""} name={item.name} abv={item.abv} />;
+    }
+    return (
+        <img
+            src={src}
+            alt={item.name}
+            className={className}
+            onError={() => setErrored(true)}
+        />
+    );
+};
+
 const GenericBottle: React.FC<{ category: string; name: string; abv: number }> = ({ category, name, abv }) => {
     let color = "#855829"; // 위스키
     let shape = "rect";

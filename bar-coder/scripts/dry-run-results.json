@@ -1,0 +1,137 @@
+[
+  {
+    "id": 37,
+    "name": "트리플 섹",
+    "category": "리큐르",
+    "query": "트리플 섹 리큐르",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 232,
+    "name": "호세쿠엘보 데킬라",
+    "category": "데킬라",
+    "query": "호세쿠엘보 데킬라 데킬라",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 265,
+    "name": "라임주스",
+    "category": "주스",
+    "query": "라임주스 주스",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 266,
+    "name": "소금",
+    "category": "가루",
+    "query": "소금 가루",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 300,
+    "name": "자몽 시럽",
+    "category": "시럽",
+    "query": "자몽 시럽 시럽",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 301,
+    "name": "증류식 소주",
+    "category": "전통주",
+    "query": "증류식 소주 전통주",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 302,
+    "name": "블랑톤",
+    "category": "버번",
+    "query": "블랑톤 버번",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 303,
+    "name": "주라 12년",
+    "category": "위스키",
+    "query": "주라 12년 위스키",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 304,
+    "name": "아벨라워 12년",
+    "category": "위스키",
+    "query": "아벨라워 12년 위스키",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 331,
+    "name": "디사론노",
+    "category": "리큐르",
+    "query": "디사론노 리큐르",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 332,
+    "name": "심플시럽",
+    "category": "시럽",
+    "query": "심플시럽 시럽",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 333,
+    "name": "설탕",
+    "category": "가루",
+    "query": "설탕 가루",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 334,
+    "name": "레몬 주스",
+    "category": "주스",
+    "query": "레몬 주스 주스",
+    "topImages": [],
+    "error": "Custom Search API has not been used in project 543386366706 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/customsearch.googleapis.com/overview?project=543386366706 then retry. If you enabled this API recently, wait a few minutes for the action to propagate to our systems and retry."
+  },
+  {
+    "id": 335,
+    "name": "계란",
+    "category": "기타",
+    "query": "계란 기타",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 364,
+    "name": "러셀 리저브 싱글배럴 Russell's Reserve Single Barrel",
+    "category": "버번",
+    "query": "러셀 리저브 싱글배럴 Russell's Reserve Single Barrel 버번",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 397,
+    "name": "까뮤 x.o 롱넥",
+    "category": "꼬냑",
+    "query": "까뮤 x.o 롱넥 꼬냑",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  },
+  {
+    "id": 398,
+    "name": "",
+    "query": "",
+    "topImages": [],
+    "error": "Requests to this API customsearch method google.customsearch.v1.CustomSearchService.List are blocked."
+  }
+]
