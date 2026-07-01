@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRouter, useSearchParams } from "next/navigation";
 import BottleVolumeSlider from "@/components/ui/BottleVolumeSlider";
 import { getInventory, addInventoryItem, getInventoryFields, deleteInventoryItem, updateInventoryItem, uploadFile } from "@/lib/baserow";
+import TastingNotesSection from "@/components/tasting/TastingNotesSection";
 import { updateProfile } from "firebase/auth";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
@@ -758,40 +759,50 @@ function MyPageContent() {
         {/* Bottle Detail Info Modal */}
         {selectedBottleInfo && (
             <div className="fixed inset-0 z-[180] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in" onClick={() => setSelectedBottleInfo(null)}>
-                <div className="w-full max-w-xs bg-[#131110] rounded-[2rem] border border-outline-variant/15 p-6 shadow-2xl relative overflow-hidden text-center" onClick={e => e.stopPropagation()}>
+                <div className="w-full max-w-sm bg-[#131110] rounded-[2rem] border border-outline-variant/15 p-6 shadow-2xl relative overflow-hidden max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                     <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary/10 blur-[80px] rounded-full mix-blend-screen pointer-events-none" />
-                    
-                    <div className="flex justify-center mb-4">
-                        {getBottleImage(selectedBottleInfo) === "generic" ? (
-                            <GenericBottle category={selectedBottleInfo.category?.value || ""} name={selectedBottleInfo.name} abv={selectedBottleInfo.abv} />
-                        ) : (
-                            <BottleImage
-                                src={getBottleImage(selectedBottleInfo)}
-                                item={selectedBottleInfo}
-                                className="h-32 object-contain drop-shadow-[0_10px_15px_rgba(0,0,0,0.5)]"
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 text-center relative">
+                        <div className="flex justify-center mb-4">
+                            {getBottleImage(selectedBottleInfo) === "generic" ? (
+                                <GenericBottle category={selectedBottleInfo.category?.value || ""} name={selectedBottleInfo.name} abv={selectedBottleInfo.abv} />
+                            ) : (
+                                <BottleImage
+                                    src={getBottleImage(selectedBottleInfo)}
+                                    item={selectedBottleInfo}
+                                    className="h-32 object-contain drop-shadow-[0_10px_15px_rgba(0,0,0,0.5)]"
+                                />
+                            )}
+                        </div>
+
+                        <span className="text-[9px] uppercase tracking-[0.2em] text-primary font-black mb-1 block">
+                            {selectedBottleInfo.category?.value || "ETC"}
+                        </span>
+                        <h4 className="text-base font-headline font-bold text-on-surface mb-3 leading-snug">
+                            {selectedBottleInfo.name}
+                        </h4>
+
+                        <div className="flex justify-center gap-3 mb-2">
+                            <div className="px-3 py-1 rounded-xl bg-surface-variant/20 border border-outline-variant/10 text-xs font-bold text-on-surface-variant">
+                                ABV {selectedBottleInfo.abv}%
+                            </div>
+                            <div className="px-3 py-1 rounded-xl bg-primary/10 border border-primary/20 text-xs font-bold text-primary">
+                                Volume {selectedBottleInfo.volume}ML
+                            </div>
+                        </div>
+
+                        {user && (
+                            <TastingNotesSection
+                                uid={user.uid}
+                                inventoryId={selectedBottleInfo.id}
+                                inventoryName={selectedBottleInfo.name}
                             />
                         )}
                     </div>
 
-                    <span className="text-[9px] uppercase tracking-[0.2em] text-primary font-black mb-1 block">
-                        {selectedBottleInfo.category?.value || "ETC"}
-                    </span>
-                    <h4 className="text-base font-headline font-bold text-on-surface mb-3 leading-snug">
-                        {selectedBottleInfo.name}
-                    </h4>
-                    
-                    <div className="flex justify-center gap-3 mb-6">
-                        <div className="px-3 py-1 rounded-xl bg-surface-variant/20 border border-outline-variant/10 text-xs font-bold text-on-surface-variant">
-                            ABV {selectedBottleInfo.abv}%
-                        </div>
-                        <div className="px-3 py-1 rounded-xl bg-primary/10 border border-primary/20 text-xs font-bold text-primary">
-                            Volume {selectedBottleInfo.volume}ML
-                        </div>
-                    </div>
-
-                    <button 
+                    <button
                         onClick={() => setSelectedBottleInfo(null)}
-                        className="w-full bg-surface-variant/20 hover:bg-surface-variant/40 text-on-surface py-3 rounded-xl text-xs font-bold tracking-widest uppercase transition-all"
+                        className="mt-3 w-full bg-surface-variant/20 hover:bg-surface-variant/40 text-on-surface py-3 rounded-xl text-xs font-bold tracking-widest uppercase transition-all shrink-0 relative"
                     >
                         Close
                     </button>

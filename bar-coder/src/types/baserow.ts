@@ -11,6 +11,19 @@ export interface InventoryItem {
 }
 
 
+export interface TastingNote {
+    id: number;
+    name: string;             // 위스키 이름 (편의용, 사실상 inventory_id로 조인)
+    user_uid: string;
+    inventory_id: number;     // 연결된 인벤토리 row id
+    date?: string;            // YYYY-MM-DD (Baserow date field)
+    nose?: string;
+    palate?: string;
+    finish?: string;
+    rating?: number | string; // 0~5, 소수점 2자리
+    overall?: string;
+}
+
 export interface RecipeItem {
     id: number;
     name: string;
@@ -24,4 +37,5 @@ export interface RecipeItem {
     abv?: number | string; // Alcohol by volume (number or string)
     glass?: string; // Glass type
     info?: string; // Short description
+    embedding?: string; // JSON-serialized 1024-dim Cohere embedding for RAG
 }

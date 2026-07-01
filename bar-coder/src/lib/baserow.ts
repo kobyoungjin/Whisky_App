@@ -1,10 +1,11 @@
 import axios from "axios";
-import { InventoryItem, RecipeItem } from "@/types/baserow";
+import { InventoryItem, RecipeItem, TastingNote } from "@/types/baserow";
 
 const BASEROW_API_URL = process.env.NEXT_PUBLIC_BASEROW_URL || "https://api.baserow.io/api";
 const BASEROW_TOKEN = process.env.NEXT_PUBLIC_BASEROW_TOKEN;
 const INVENTORY_TABLE_ID = process.env.NEXT_PUBLIC_BASEROW_INVENTORY_TABLE_ID;
 const RECIPES_TABLE_ID = process.env.NEXT_PUBLIC_BASEROW_RECIPES_TABLE_ID;
+const TASTING_TABLE_ID = process.env.NEXT_PUBLIC_BASEROW_TASTING_TABLE_ID;
 
 const getHeaders = () => {
     if (!BASEROW_TOKEN) {
@@ -238,6 +239,79 @@ export async function uploadFile(file: File): Promise<any> {
         return response.data; // { url, name, size, type, ... }
     } catch (error) {
         console.error("Error uploading file to Baserow:", error);
+        throw error;
+    }
+}
+
+/**
+ * [TastingNotes] 특정 인벤토리 아이템의 테이스팅 노트 목록 조회 (최신순)
+ */
+export async function getTastingNotes(uid: string, inventoryId: number): Promise<TastingNote[]> {
+    if (!TASTING_TABLE_ID) throw new Error("Tasting notes table ID is missing.");
+    try {
+        const response = await axios.get(
+            `${BASEROW_API_URL}/database/rows/table/${TASTING_TABLE_ID}/?user_field_names=true&filter__user_uid__equal=${uid}&filter__inventory_id__equal=${inventoryId}&order_by=-date&size=200`,
+            { headers: getHeaders() }
+        );
+        return response.data.results;
+    } catch (error) {
+        console.error("Error fetching tasting notes:", error);
+        throw error;
+    }
+}
+
+/**
+ * [TastingNotes] 노트 추가
+ */
+export async function addTastingNote(data: Omit<TastingNote, "id">): Promise<TastingNote> {
+    if (!TASTING_TABLE_ID) throw new Error("Tasting notes table ID is missing.");
+    try {
+        const response = await axios.post(
+            `${BASEROW_API_URL}/database/rows/table/${TASTING_TABLE_ID}/?user_field_names=true`,
+            data,
+            { headers: getHeaders() }
+        );
+        return response.data;
+    } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+            console.error("Baserow Tasting Add Error:", JSON.stringify(error.response.data, null, 2));
+        }
+        throw error;
+    }
+}
+
+/**
+ * [TastingNotes] 노트 수정
+ */
+export async function updateTastingNote(id: number, data: Partial<Omit<TastingNote, "id" | "user_uid" | "inventory_id">>): Promise<TastingNote> {
+    if (!TASTING_TABLE_ID) throw new Error("Tasting notes table ID is missing.");
+    try {
+        const response = await axios.patch(
+            `${BASEROW_API_URL}/database/rows/table/${TASTING_TABLE_ID}/${id}/?user_field_names=true`,
+            data,
+            { headers: getHeaders() }
+        );
+        return response.data;
+    } catch (error) {
+        if (axios.isAxiosError(error) && error.response) {
+            console.error("Baserow Tasting Update Error:", JSON.stringify(error.response.data, null, 2));
+        }
+        throw error;
+    }
+}
+
+/**
+ * [TastingNotes] 노트 삭제
+ */
+export async function deleteTastingNote(id: number): Promise<void> {
+    if (!TASTING_TABLE_ID) throw new Error("Tasting notes table ID is missing.");
+    try {
+        await axios.delete(
+            `${BASEROW_API_URL}/database/rows/table/${TASTING_TABLE_ID}/${id}/`,
+            { headers: getHeaders() }
+        );
+    } catch (error) {
+        console.error("Error deleting tasting note:", error);
         throw error;
     }
 }
