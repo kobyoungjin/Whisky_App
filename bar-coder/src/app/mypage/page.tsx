@@ -61,6 +61,7 @@ function MyPageContent() {
     // 이미지 업로드 State
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const [uploadProgress, setUploadProgress] = useState<string>("");
+    const [imageUrlInput, setImageUrlInput] = useState("");
     const imageFileInputRef = useRef<HTMLInputElement>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -194,20 +195,19 @@ function MyPageContent() {
         }
     }, [activeInventoryTab, editingItem, isAddModalOpen]);
 
-    // 이미지 업로드: 배경 제거 → Baserow 업로드
-    const handleBottleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files || !e.target.files[0]) return;
-        const file = e.target.files[0];
+    // 배경 제거 + trim + 400x600 캔버스 fit + Baserow 업로드 (파일 소스 무관)
+    const processAndUploadImage = async (file: File) => {
         setIsUploadingImage(true);
         setUploadProgress("배경 제거 모델 로딩 중…");
         try {
-            // Dynamic import: heavy WASM bundle only loaded on demand
             const { removeBackground } = await import("@imgly/background-removal");
             setUploadProgress("배경 제거 중…");
-            const blob = await removeBackground(file);
+            const rawBlob = await removeBackground(file);
+            setUploadProgress("크기 정규화 중…");
+            const fittedBlob = await fitToShelfCanvas(rawBlob);
             setUploadProgress("Baserow 업로드 중…");
-            const processedName = file.name.replace(/\.[^.]+$/, "") + "_nobg.png";
-            const processedFile = new File([blob], processedName, { type: "image/png" });
+            const processedName = (file.name || "bottle").replace(/\.[^.]+$/, "") + "_shelf.png";
+            const processedFile = new File([fittedBlob], processedName, { type: "image/png" });
             const uploaded = await uploadFile(processedFile);
             setFormData(prev => ({ ...prev, image: [{ url: uploaded.url, name: uploaded.name }] }));
         } catch (err) {
@@ -216,7 +216,71 @@ function MyPageContent() {
         } finally {
             setIsUploadingImage(false);
             setUploadProgress("");
+        }
+    };
+
+    // 파일 선택 → 처리
+    const handleBottleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || !e.target.files[0]) return;
+        const file = e.target.files[0];
+        try {
+            await processAndUploadImage(file);
+        } finally {
             if (imageFileInputRef.current) imageFileInputRef.current.value = "";
+        }
+    };
+
+    // URL/data URL에서 가져오기 → 처리
+    const handleImageFromUrl = async () => {
+        // Trim edge whitespace. Do NOT strip internal whitespace — data: URLs can contain base64
+        // that's fine, but we allow internal characters as-is. Newlines from paste are stripped.
+        let url = imageUrlInput.replace(/[\r\n\t]+/g, "").trim();
+        if (!url) return;
+
+        const isDataUrl = url.startsWith("data:");
+
+        // Only normalize http(s) URLs; leave data URLs untouched.
+        if (!isDataUrl) {
+            if (url.startsWith("//")) {
+                url = `https:${url}`;
+            } else if (!/^https?:\/\//i.test(url)) {
+                url = `https://${url}`;
+            }
+            try {
+                new URL(url);
+            } catch (e: any) {
+                alert(`URL 형식이 올바르지 않습니다.\n입력값: ${imageUrlInput.slice(0, 100)}${imageUrlInput.length > 100 ? "…" : ""}`);
+                return;
+            }
+        }
+
+        setIsUploadingImage(true);
+        setUploadProgress("이미지 다운로드 중…");
+        try {
+            let blob: Blob;
+            if (isDataUrl) {
+                // data: URLs are handled entirely in-browser (no server round-trip needed)
+                const dataRes = await fetch(url);
+                blob = await dataRes.blob();
+            } else {
+                const proxyRes = await fetch(`/api/fetch-image?url=${encodeURIComponent(url)}`);
+                if (!proxyRes.ok) {
+                    const err = await proxyRes.json().catch(() => ({}));
+                    console.error(`Image fetch failed. Attempted URL: ${url}`, err);
+                    throw new Error(err.error || `download failed: ${proxyRes.status}`);
+                }
+                blob = await proxyRes.blob();
+            }
+            const ext = (blob.type.split("/")[1] || "png").split(";")[0];
+            const filename = `remote_${Date.now()}.${ext}`;
+            const file = new File([blob], filename, { type: blob.type });
+            setImageUrlInput("");
+            await processAndUploadImage(file);
+        } catch (err: any) {
+            console.error("URL image import failed:", err);
+            alert(`이미지를 가져오지 못했습니다.\n${err.message || ""}`);
+            setIsUploadingImage(false);
+            setUploadProgress("");
         }
     };
 
@@ -369,11 +433,11 @@ function MyPageContent() {
     };
 
     // Drag-and-drop sensors: pointer + touch both supported.
-    // activationConstraint avoids triggering drag on simple click/tap.
+    // Long-press (1s) required before drag starts, so single clicks/taps still open info modal.
     // NOTE: must run unconditionally before any early return (Rules of Hooks).
     const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-        useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+        useSensor(PointerSensor, { activationConstraint: { delay: 1000, tolerance: 6 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 1000, tolerance: 6 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
     );
 
@@ -666,7 +730,7 @@ function MyPageContent() {
                         </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar grid grid-cols-1 sm:grid-cols-2 gap-3 min-h-0 pb-4">
+                    <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar flex flex-col gap-1.5 min-h-0 pb-4">
                         {loading ? (
                             Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
                         ) : filteredInventory.length > 0 ? (
@@ -864,6 +928,32 @@ function MyPageContent() {
                                 className="hidden"
                                 onChange={handleBottleImageUpload}
                             />
+
+                            {/* URL로 가져오기 */}
+                            <div className="flex items-center gap-1.5 text-[9px] text-on-surface-variant/40 uppercase tracking-widest px-1 pt-1">
+                                <span className="flex-1 h-px bg-outline-variant/10" />
+                                <span>또는 URL / data:image</span>
+                                <span className="flex-1 h-px bg-outline-variant/10" />
+                            </div>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={imageUrlInput}
+                                    onChange={(e) => setImageUrlInput(e.target.value)}
+                                    placeholder="https://... 또는 data:image/…;base64,…"
+                                    disabled={isUploadingImage}
+                                    className="flex-1 min-w-0 bg-transparent border border-outline-variant/20 focus:border-primary/50 rounded-xl px-3 py-2 text-[11px] text-on-surface placeholder:text-on-surface-variant/30 outline-none transition-all disabled:opacity-50"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleImageFromUrl}
+                                    disabled={isUploadingImage || !imageUrlInput.trim()}
+                                    className="shrink-0 px-3 py-2 rounded-xl bg-surface-variant/20 border border-outline-variant/20 hover:bg-surface-variant/40 text-on-surface-variant text-[10px] font-bold tracking-wide transition-all disabled:opacity-40"
+                                >
+                                    가져오기
+                                </button>
+                            </div>
+
                             <p className="text-[9px] text-on-surface-variant/40 px-1 leading-relaxed">
                                 업로드한 사진에서 병 모양만 자동으로 잘라내 투명 PNG로 저장합니다. 첫 사용 시 모델 다운로드(~50MB)가 발생하며 이후엔 캐시됩니다.
                             </p>
@@ -872,14 +962,21 @@ function MyPageContent() {
                         {/* 병 모양의 인터랙티브 보틀 슬라이더 (좌우 정보 통합) */}
                         <div className="bg-surface-container-low/20 backdrop-blur-sm p-2 py-4 sm:p-4 sm:pt-6 rounded-[2.5rem] border border-outline-variant/10 shadow-inner mt-2 overflow-hidden relative group">
                             <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
-                            <BottleVolumeSlider
-                                value={formData.volume}
-                                onChange={(val) => setFormData({ ...formData, volume: val })}
-                                abvValue={formData.abv}
-                                onAbvChange={(val) => setFormData({ ...formData, abv: val })}
-                                maxVolume={1000}
-                                abvReadOnly={["과일","주스","시럽","가루","소다","기타"].some(c => formData.category.includes(c))}
-                            />
+                            {(() => {
+                                const catUnit = getCategoryUnit(formData.category);
+                                return (
+                                    <BottleVolumeSlider
+                                        value={formData.volume}
+                                        onChange={(val) => setFormData({ ...formData, volume: val })}
+                                        abvValue={formData.abv}
+                                        onAbvChange={(val) => setFormData({ ...formData, abv: val })}
+                                        maxVolume={catUnit.max}
+                                        step={catUnit.step}
+                                        unit={catUnit.label}
+                                        abvReadOnly={["과일","주스","시럽","가루","소다","기타"].some(c => formData.category.includes(c))}
+                                    />
+                                );
+                            })()}
                         </div>
 
                         <button
@@ -1055,6 +1152,74 @@ const getBottleImage = (item: InventoryItem) => {
     if (Array.isArray(item.image) && item.image[0]?.url) return item.image[0].url;
     return "generic";
 };
+
+// 카테고리 → 표시 단위/최대값/step 매핑.
+// 과일·기타는 낱개(EA), 가루는 밀리그램, 나머지는 밀리리터.
+function getCategoryUnit(category: string): { label: string; max: number; step: number } {
+    const c = (category || "").toLowerCase();
+    if (c.includes("과일") || c.includes("기타") || c.includes("개")) {
+        return { label: "EA", max: 100, step: 1 };
+    }
+    if (c.includes("가루")) {
+        return { label: "MG", max: 1000, step: 10 };
+    }
+    return { label: "ml", max: 1000, step: 10 };
+}
+
+// Trim transparent edges then fit content into a 400x600 canvas with 12px padding.
+// Matches the batch script (scripts/rebg-resize-inventory.mjs) so newly uploaded
+// bottles line up on the shelf at the same size as items processed in bulk.
+async function fitToShelfCanvas(bgRemovedBlob: Blob): Promise<Blob> {
+    const CANVAS_W = 400;
+    const CANVAS_H = 600;
+    const PADDING = 12;
+    const ALPHA_THRESHOLD = 10;
+
+    const bitmap = await createImageBitmap(bgRemovedBlob);
+    const off = document.createElement("canvas");
+    off.width = bitmap.width;
+    off.height = bitmap.height;
+    const offCtx = off.getContext("2d");
+    if (!offCtx) throw new Error("failed to get 2D context");
+    offCtx.drawImage(bitmap, 0, 0);
+    const { data } = offCtx.getImageData(0, 0, bitmap.width, bitmap.height);
+
+    let minX = bitmap.width, minY = bitmap.height, maxX = -1, maxY = -1;
+    for (let y = 0; y < bitmap.height; y++) {
+        for (let x = 0; x < bitmap.width; x++) {
+            const alpha = data[(y * bitmap.width + x) * 4 + 3];
+            if (alpha > ALPHA_THRESHOLD) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+    if (maxX < minX || maxY < minY) throw new Error("배경 제거 결과가 비어 있습니다");
+
+    const cropW = maxX - minX + 1;
+    const cropH = maxY - minY + 1;
+    const targetW = CANVAS_W - PADDING * 2;
+    const targetH = CANVAS_H - PADDING * 2;
+    const scale = Math.min(targetW / cropW, targetH / cropH);
+    const newW = Math.max(1, Math.round(cropW * scale));
+    const newH = Math.max(1, Math.round(cropH * scale));
+
+    const finalCanvas = document.createElement("canvas");
+    finalCanvas.width = CANVAS_W;
+    finalCanvas.height = CANVAS_H;
+    const ctx = finalCanvas.getContext("2d");
+    if (!ctx) throw new Error("failed to get final 2D context");
+    ctx.imageSmoothingQuality = "high";
+    const dx = Math.round((CANVAS_W - newW) / 2);
+    const dy = Math.round((CANVAS_H - newH) / 2);
+    ctx.drawImage(bitmap, minX, minY, cropW, cropH, dx, dy, newW, newH);
+
+    return new Promise<Blob>((resolve, reject) => {
+        finalCanvas.toBlob(b => b ? resolve(b) : reject(new Error("canvas.toBlob returned null")), "image/png");
+    });
+}
 
 
 // Sortable wrapper for one bottle on the shelf — uses @dnd-kit's useSortable.

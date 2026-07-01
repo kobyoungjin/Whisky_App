@@ -1,6 +1,6 @@
 import React from "react";
 import { InventoryItem } from "@/types/baserow";
-import { Edit2, Trash2 } from "lucide-react";
+import { Edit2, Trash2, Wine } from "lucide-react";
 
 interface InventoryCardProps {
     item: InventoryItem;
@@ -8,56 +8,69 @@ interface InventoryCardProps {
     onDelete?: (id: number) => void;
 }
 
-const InventoryCard: React.FC<InventoryCardProps> = ({ item, onEdit, onDelete }) => {
-    return (
-        <div className="bg-surface-container-low border border-outline-variant/10 p-3 rounded-2xl group hover:border-primary/40 transition-all duration-300 flex flex-col gap-2 relative overflow-hidden">
-            {/* Background Accent */}
-            <div className="absolute -top-10 -right-10 w-20 h-20 bg-primary/5 blur-3xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-            
-            <div className="relative z-10 flex items-start justify-between gap-3">
-                <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                    <span className="text-[8px] uppercase tracking-[0.25em] text-on-surface-variant/40 font-black truncate">
-                        {item.category?.value || "ETC"}
-                    </span>
-                    <h3 className="text-sm font-headline font-bold text-on-surface group-hover:text-primary transition-all duration-300 truncate">
-                        {item.name}
-                    </h3>
-                </div>
+const unitFor = (category?: string) => {
+    if (!category) return "ML";
+    const c = category;
+    if (c.includes("과일") || c.includes("기타") || c.includes("개")) return "EA";
+    if (c.includes("가루")) return "MG";
+    return "ML";
+};
 
-                <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
-                    {item.abv > 0 && (
-                        <div className="px-2 py-0.5 rounded-md bg-surface-variant/10 border border-outline-variant/10 transition-all duration-300">
-                            <span className="text-[9px] text-on-surface-variant/60 font-bold">
-                                {item.abv}%
-                            </span>
-                        </div>
-                    )}
-                    <div className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/20 flex items-center gap-1 transition-all duration-300">
-                        <span className="text-[9px] font-bold text-primary">{item.volume || 0}</span>
-                        <span className="text-[8px] text-primary/70 font-bold uppercase tracking-tighter">
-                            {item.category?.value.includes("과il") || item.category?.value.includes("개") ? "EA" : item.category?.value.includes("가루") ? "MG" : "ML"}
-                        </span>
-                    </div>
-                </div>
+const InventoryCard: React.FC<InventoryCardProps> = ({ item, onEdit, onDelete }) => {
+    const thumbUrl = item.image?.[0]?.thumbnails?.small?.url || item.image?.[0]?.url;
+    const cat = item.category?.value || "ETC";
+    return (
+        <div className="group flex items-center gap-3 py-2 px-2.5 rounded-xl bg-surface-container-low/40 hover:bg-surface-container-low border border-outline-variant/10 hover:border-primary/30 transition-all">
+            {/* Thumbnail */}
+            <div className="shrink-0 w-10 h-10 rounded-lg bg-black/30 border border-outline-variant/10 overflow-hidden flex items-center justify-center">
+                {thumbUrl ? (
+                    <img src={thumbUrl} alt={item.name} className="w-full h-full object-contain" />
+                ) : (
+                    <Wine className="w-5 h-5 text-on-surface-variant/30" />
+                )}
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-outline-variant/5 relative z-10">
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => onEdit?.(item)}
-                        className="flex items-center gap-1 text-[9px] font-bold text-on-surface-variant/50 hover:text-primary transition-colors py-1"
-                    >
-                        <Edit2 className="w-3 h-3" />
-                        Edit
-                    </button>
-                    <button
-                        onClick={() => onDelete?.(item.id)}
-                        className="flex items-center gap-1 text-[9px] font-bold text-on-surface-variant/50 hover:text-red-400 transition-colors py-1"
-                    >
-                        <Trash2 className="w-3 h-3" />
-                        Delete
-                    </button>
-                </div>
+            {/* Name + category */}
+            <div className="flex-1 min-w-0">
+                <h3 className="text-[13px] font-headline font-bold text-on-surface group-hover:text-primary transition-colors truncate leading-tight">
+                    {item.name}
+                </h3>
+                <span className="text-[9px] uppercase tracking-[0.2em] text-on-surface-variant/50 font-black">
+                    {cat}
+                </span>
+            </div>
+
+            {/* Stats */}
+            <div className="shrink-0 flex items-center gap-1.5">
+                {item.abv > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-md bg-surface-variant/15 border border-outline-variant/10 text-[9px] font-bold text-on-surface-variant/70 tabular-nums">
+                        {item.abv}%
+                    </span>
+                )}
+                <span className="px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-[9px] font-bold text-primary tabular-nums flex items-baseline gap-0.5">
+                    {item.volume || 0}
+                    <span className="text-[7px] text-primary/60 uppercase tracking-tighter">{unitFor(cat)}</span>
+                </span>
+            </div>
+
+            {/* Actions */}
+            <div className="shrink-0 flex items-center gap-0.5">
+                <button
+                    type="button"
+                    onClick={() => onEdit?.(item)}
+                    aria-label="Edit"
+                    className="p-1.5 rounded-lg text-on-surface-variant/50 hover:text-primary hover:bg-primary/10 transition-colors"
+                >
+                    <Edit2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onDelete?.(item.id)}
+                    aria-label="Delete"
+                    className="p-1.5 rounded-lg text-on-surface-variant/50 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                    <Trash2 className="w-3.5 h-3.5" />
+                </button>
             </div>
         </div>
     );

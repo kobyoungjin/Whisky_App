@@ -4,13 +4,15 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Droplet } from "lucide-react";
 
 interface BottleVolumeSliderProps {
-    value: number;            // 현재 용량 (ml)
+    value: number;            // 현재 용량
     onChange: (val: number) => void;
     abvValue?: number;        // 도수 (ABV)
-    onAbvChange?: (val: number) => void; 
-    maxVolume?: number;       
+    onAbvChange?: (val: number) => void;
+    maxVolume?: number;
     disabled?: boolean;       // 슬라이더 전체 비활성화 (드래그도 막음)
     abvReadOnly?: boolean;    // ABV만 0으로 고정 (비알코올 재료용, 슬라이더는 활성화)
+    unit?: string;            // 단위 라벨 (ml / EA / MG …)
+    step?: number;            // 스냅 단위 (기본 10)
 }
 
 export default function BottleVolumeSlider({
@@ -21,6 +23,8 @@ export default function BottleVolumeSlider({
     maxVolume = 1000,
     disabled = false,
     abvReadOnly = false,
+    unit = "ml",
+    step = 10,
 }: BottleVolumeSliderProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -42,12 +46,12 @@ export default function BottleVolumeSlider({
         const percentage = Math.max(0, Math.min(100, 100 - (y / rect.height) * 100));
         
         const rawValue = (percentage / 100) * maxVolume;
-        const snappedValue = Math.round(rawValue / 10) * 10;
-        
+        const snappedValue = Math.round(rawValue / step) * step;
+
         if (snappedValue !== value) {
             onChange(snappedValue);
         }
-    }, [isDragging, disabled, maxVolume, value, onChange]);
+    }, [isDragging, disabled, maxVolume, value, onChange, step]);
 
     const handlePointerDown = (e: React.PointerEvent) => {
         if (disabled) return;
@@ -95,11 +99,11 @@ export default function BottleVolumeSlider({
                                 disabled={disabled}
                                 placeholder="0"
                                 className="w-[4.5rem] bg-transparent text-right text-3xl font-headline italic font-extrabold text-[#e8c678] tabular-nums tracking-tighter focus:outline-none disabled:opacity-50"
-                                step="10"
+                                step={step}
                                 min="0"
                                 max={maxVolume}
                             />
-                            <span className="text-[10px] text-[#e8c678]/70 font-bold tracking-tighter ml-0.5">ml</span>
+                            <span className="text-[10px] text-[#e8c678]/70 font-bold tracking-tighter ml-0.5">{unit}</span>
                         </div>
                     </div>
 
