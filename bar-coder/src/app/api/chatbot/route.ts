@@ -47,8 +47,11 @@ function isTasteAnalysisQuery(text: string): boolean {
     if (/내\s*취향|나\s*취향|취향\s*분석|취향을?\s*알려|내가\s*좋아|어떤\s*스타일|내\s*스타일|내\s*노트\s*분석|내\s*(평점|별점)|내\s*컬렉션|내\s*재고\s*분석/.test(text)) return true;
     // "next / new bottle" family
     if (/(다음|다음번|이번에|앞으로|새로|새).{0,15}(위스키|보틀|술|병)/.test(text)) return true;
-    // "recommend a whisky" family (bare recommendation intent)
-    if (/(위스키|보틀).{0,15}(추천|사면\s*좋|사야|살\s*만|살\s*까)/.test(text)) return true;
+    // "recommend a whisky" family — order-agnostic
+    // Matches both "위스키 추천" and "추천할 위스키", "○○에 맞는/어울리는 위스키" etc.
+    const whiskyWord = /(위스키|보틀|술|증류주|스카치|버번)/;
+    const recommendWord = /(추천|사면\s*좋|사야|살\s*만|살\s*까|어울리는|맞는|좋은|괜찮은)/;
+    if (whiskyWord.test(text) && recommendWord.test(text)) return true;
     return false;
 }
 
@@ -305,7 +308,13 @@ export async function POST(req: Request) {
             }
         }
         const rawText = completion.choices[0]?.message?.content || "";
-        const answer = rawText.replace(/\*\*|##|---|`/g, "").trim();
+        // Strip markdown noise but keep the raw for length check first.
+        let answer = rawText.replace(/\*\*|##|---|`/g, "").trim();
+        // Guard against near-empty replies (e.g. LLM returned only "---" or 1-2 chars).
+        if (answer.length < 3) {
+            console.warn(`[Chatbot] Empty/short response from ${activeModel}. Raw len=${rawText.length}`);
+            answer = "죄송해요, 답변을 만들지 못했어요. 질문을 조금 더 구체적으로 다시 물어봐 주세요.";
+        }
 
         // Only surface cards for recipes the assistant actually mentioned by name.
         const mentioned = retrievedForCards.filter(r =>
