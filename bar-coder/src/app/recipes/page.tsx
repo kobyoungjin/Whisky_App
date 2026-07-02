@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Search, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useFavorites } from "@/hooks/useFavorites";
 import { useRouter } from "next/navigation";
 import { getRecipes, getInventory, addRecipe, uploadFile } from "@/lib/baserow";
 import { RecipeItem, InventoryItem } from "@/types/baserow";
@@ -56,6 +57,8 @@ export default function RecipesPage() {
     const [selectedSpirits, setSelectedSpirits] = useState<string[]>([]);
     const [selectedFlavor, setSelectedFlavor] = useState<string | null>(null);
     const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
+    const [favoritesOnly, setFavoritesOnly] = useState(false);
+    const { favorites, isFavorite } = useFavorites(user?.uid);
     
     // Add Recipe Modal State
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -180,13 +183,18 @@ export default function RecipesPage() {
             results = results.filter(r => getDifficultyLevel(r) === selectedDifficulty);
         }
 
+        // 5. Favorites Only Filter
+        if (favoritesOnly) {
+            results = results.filter(r => isFavorite(r.id));
+        }
+
         // If no search or filter, show random
-        if (searchQuery.trim() === "" && selectedSpirits.length === 0 && !selectedFlavor && !selectedDifficulty) {
+        if (searchQuery.trim() === "" && selectedSpirits.length === 0 && !selectedFlavor && !selectedDifficulty && !favoritesOnly) {
             return randomRecipes;
         }
 
         return results;
-    }, [searchQuery, selectedSpirits, selectedFlavor, selectedDifficulty, allRecipes, randomRecipes]);
+    }, [searchQuery, selectedSpirits, selectedFlavor, selectedDifficulty, favoritesOnly, favorites, isFavorite, allRecipes, randomRecipes]);
 
     if (authLoading || !user) {
         return (
@@ -230,6 +238,28 @@ export default function RecipesPage() {
  
                 {/* Filters Section */}
                 <section className="space-y-4 mb-8 w-full">
+                    {/* Favorites Toggle */}
+                    <div className="flex items-center justify-between px-1">
+                        <h3 className="font-headline text-[10px] sm:text-xs tracking-[0.2em] uppercase text-on-surface-variant/80">Filter</h3>
+                        <button
+                            onClick={() => setFavoritesOnly(v => !v)}
+                            aria-pressed={favoritesOnly}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] sm:text-xs font-bold transition-all ${
+                                favoritesOnly
+                                    ? "bg-primary/10 border border-primary/40 text-primary shadow-[0_0_15px_rgba(255,198,62,0.15)]"
+                                    : "bg-surface-variant/30 backdrop-blur-md border border-outline-variant/20 text-on-surface-variant hover:border-primary/40 hover:text-primary"
+                            }`}
+                        >
+                            <span
+                                className="material-symbols-outlined text-sm"
+                                style={{ fontVariationSettings: favoritesOnly ? "'FILL' 1" : "'FILL' 0" }}
+                            >
+                                favorite
+                            </span>
+                            <span>관심 등록{favorites.size > 0 ? ` (${favorites.size})` : ""}</span>
+                        </button>
+                    </div>
+
                     {/* Base Spirit */}
                     <div className="space-y-1 sm:space-y-2">
                         <h3 className="font-headline text-[10px] sm:text-xs tracking-[0.2em] uppercase text-on-surface-variant/80 px-1">Base Spirit</h3>

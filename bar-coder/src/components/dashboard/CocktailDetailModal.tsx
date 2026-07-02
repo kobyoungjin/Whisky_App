@@ -4,6 +4,8 @@ import React, { useMemo, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { RecipeItem, InventoryItem } from "@/types/baserow";
 import { isIngredientMatched } from "@/lib/substitute";
+import { useAuth } from "@/hooks/useAuth";
+import { useFavorites } from "@/hooks/useFavorites";
 
 interface CocktailDetailModalProps {
     isOpen: boolean;
@@ -19,6 +21,9 @@ export default function CocktailDetailModal({
     inventory,
 }: CocktailDetailModalProps) {
     const [mounted, setMounted] = useState(false);
+    const { user } = useAuth();
+    const { isFavorite, toggle } = useFavorites(user?.uid);
+    const favored = cocktail ? isFavorite(cocktail.id) : false;
 
     useEffect(() => {
         setMounted(true);
@@ -81,7 +86,6 @@ export default function CocktailDetailModal({
     // Baserow 데이터에서 직접 가져오기
     const abv = cocktail.abv ? `${cocktail.abv}` : null;
     const glassType = cocktail.glass || null;
-    const makeMethod = cocktail.make || cocktail.technique || null;
 
     return createPortal(
         <div
@@ -99,8 +103,17 @@ export default function CocktailDetailModal({
                         <span className="material-symbols-outlined block">arrow_back</span>
                     </button>
                     <div /> {/* Spacer for title */}
-                    <button className="active:scale-95 transition-transform duration-400 text-[#D4AF37] p-2 bg-black/20 backdrop-blur-lg rounded-full">
-                        <span className="material-symbols-outlined block">favorite</span>
+                    <button
+                        onClick={() => cocktail && toggle(cocktail.id)}
+                        aria-label={favored ? "관심 해제" : "관심 등록"}
+                        className={`active:scale-95 transition-all duration-300 p-2 backdrop-blur-lg rounded-full ${favored ? "text-[#D4AF37] bg-primary/20" : "text-[#D4AF37] bg-black/20"}`}
+                    >
+                        <span
+                            className="material-symbols-outlined block"
+                            style={{ fontVariationSettings: favored ? "'FILL' 1" : "'FILL' 0" }}
+                        >
+                            favorite
+                        </span>
                     </button>
                 </header>
 
@@ -212,11 +225,6 @@ export default function CocktailDetailModal({
                                     );
                                 })}
                             </ul>
-                            
-                            <button className="mt-10 w-full py-4 rounded-2xl bg-gradient-to-br from-primary to-primary-container text-on-primary font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 shadow-2xl shadow-primary/20 active:scale-[0.98] transition-all">
-                                <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>add_circle</span>
-                                나의 홈바에 담기
-                            </button>
                         </section>
 
                         {/* Instructions */}

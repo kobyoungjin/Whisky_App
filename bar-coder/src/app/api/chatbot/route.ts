@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getInventory } from "@/lib/baserow";
+import { getInventory, getAllTastingNotes } from "@/lib/baserow";
 import { searchRecipes } from "@/lib/rag";
 import Groq from "groq-sdk";
 
@@ -36,6 +36,20 @@ function buildContextBlock(sections: { title: string; body: string }[]): string 
         .filter(s => s.body.trim().length > 0)
         .map(s => `<${s.title}>\n${s.body}\n</${s.title}>`)
         .join("\n\n");
+}
+
+// Match questions asking the bot to analyze the user's taste / suggest
+// new bottles based on their history. When this fires we attach the user's
+// inventory + tasting notes so the LLM can reason over actual data instead
+// of hallucinating.
+function isTasteAnalysisQuery(text: string): boolean {
+    // "my preferences" family
+    if (/내\s*취향|나\s*취향|취향\s*분석|취향을?\s*알려|내가\s*좋아|어떤\s*스타일|내\s*스타일|내\s*노트\s*분석|내\s*(평점|별점)|내\s*컬렉션|내\s*재고\s*분석/.test(text)) return true;
+    // "next / new bottle" family
+    if (/(다음|다음번|이번에|앞으로|새로|새).{0,15}(위스키|보틀|술|병)/.test(text)) return true;
+    // "recommend a whisky" family (bare recommendation intent)
+    if (/(위스키|보틀).{0,15}(추천|사면\s*좋|사야|살\s*만|살\s*까)/.test(text)) return true;
+    return false;
 }
 
 // Match questions asking about price / availability / where to buy.
@@ -121,9 +135,12 @@ export async function POST(req: Request) {
         }
 
         // --- Retrieval: attach top-K similar recipes as context ---
+        // Skip when the user is asking for taste analysis — that flow is about
+        // whiskies, not cocktail recipes, and mixing both contexts confuses
+        // the model (it starts recommending cocktails instead of bottles).
         let retrievedForCards: { name: string; detail: string; ingredients?: string; make?: string }[] = [];
         let recipeContext = "";
-        if (looksLikeRecipeQuery(lastUser)) {
+        if (!isTasteAnalysisQuery(lastUser) && looksLikeRecipeQuery(lastUser)) {
             try {
                 const results = await searchRecipes(lastUser, { topK: RETRIEVAL_TOP_K });
                 if (results.length > 0) {
@@ -152,9 +169,64 @@ export async function POST(req: Request) {
             }
         }
 
-        // --- Inventory: attach only when user seems to want it ---
+        // --- Taste analysis: attach inventory + all tasting notes ---
+        // Triggered by "내 취향", "다음에 뭐 사", "내 노트 분석" 등.
+        // We do this branch *before* the plain inventory attach because taste
+        // analysis needs both inventory and notes, and needs the LLM to be
+        // instructed to reason over them.
         let inventoryContext = "";
-        if (needsInventoryContext(lastUser)) {
+        let tastingContext = "";
+        let tasteAnalysisMode = false;
+
+        if (isTasteAnalysisQuery(lastUser)) {
+            tasteAnalysisMode = true;
+            try {
+                const [inv, notes] = await Promise.all([
+                    getInventory(uid),
+                    getAllTastingNotes(uid),
+                ]);
+                inventoryContext = inv.map(i =>
+                    `- ${i.name} (${i.category?.value || "기타"}, ABV ${i.abv}%)`
+                ).join("\n");
+
+                // Aggregate to a compact per-bottle summary to keep prompt tokens
+                // well under Groq's free-tier TPM (~8k). We only include the
+                // latest note per bottle (with average rating across all notes),
+                // and truncate long free-text fields.
+                const truncate = (s: string | undefined, max: number) =>
+                    !s ? "" : (s.length > max ? s.slice(0, max) + "…" : s);
+                const notesByItem = new Map<number, typeof notes>();
+                for (const n of notes) {
+                    if (!n.inventory_id) continue;
+                    const list = notesByItem.get(n.inventory_id) ?? [];
+                    list.push(n);
+                    notesByItem.set(n.inventory_id, list);
+                }
+                const noteBlocks: string[] = [];
+                for (const item of inv) {
+                    const list = notesByItem.get(item.id);
+                    if (!list || list.length === 0) continue;
+                    const ratings = list
+                        .map(n => (n.rating !== undefined && n.rating !== null && n.rating !== "") ? Number(n.rating) : null)
+                        .filter((r): r is number => r !== null);
+                    const avg = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length) : null;
+                    const avgLine = avg !== null ? `별점 평균 ${(avg * 20).toFixed(0)}%` : "";
+                    // Take just the most recent note (list is already newest-first from Baserow).
+                    const latest = list[0];
+                    const parts: string[] = [];
+                    if (avgLine) parts.push(avgLine);
+                    if (latest.nose) parts.push(`향: ${truncate(latest.nose, 80)}`);
+                    if (latest.palate) parts.push(`맛: ${truncate(latest.palate, 80)}`);
+                    if (latest.finish) parts.push(`여운: ${truncate(latest.finish, 60)}`);
+                    if (latest.overall) parts.push(`총평: ${truncate(latest.overall, 100)}`);
+                    noteBlocks.push(`- ${item.name} (${list.length}회 기록) — ${parts.join(" / ")}`);
+                }
+                tastingContext = noteBlocks.join("\n");
+            } catch (e) {
+                console.warn("Taste analysis fetch failed:", (e as Error).message);
+            }
+        } else if (needsInventoryContext(lastUser)) {
+            // Regular inventory attach (not analysis).
             try {
                 const inv = await getInventory(uid);
                 inventoryContext = inv.map(i => `- ${i.name} (${i.category?.value || "기타"})`).join("\n");
@@ -166,11 +238,20 @@ export async function POST(req: Request) {
         const contextBlock = buildContextBlock([
             { title: "참고 레시피", body: recipeContext },
             { title: "사용자 재고", body: inventoryContext },
+            { title: "사용자 테이스팅 노트", body: tastingContext },
         ]);
 
         // Compose messages: system prompt (with context appended) + conversation.
+        const analysisDirective = tasteAnalysisMode ? `
+
+지금 사용자는 자신의 취향 분석 또는 다음에 마셔볼 위스키 추천을 요청하고 있습니다. 아래 <사용자 재고>와 <사용자 테이스팅 노트>를 근거로 다음을 답변에 포함하세요:
+1. 별점이 높은 위스키에서 반복되는 향·맛·여운 키워드로 추정한 사용자 취향 요약 (예: "달콤한 셰리 계열을 선호하는 경향")
+2. 아직 시도하지 않은 스타일 또는 재고에 없는 카테고리 언급 (예: "피트 위스키는 아직 없네요")
+3. 다음에 사볼 만한 실제 위스키 2~3개 구체적 추천, 이유와 함께
+답변은 마크다운 없이 6~10문장으로 정리하세요.` : "";
+
         const finalSystem = contextBlock
-            ? `${SYSTEM_PROMPT}\n\n다음은 이번 답변에 참고할 수 있는 정보입니다. 반드시 필요한 경우에만 활용하세요.\n\n${contextBlock}`
+            ? `${SYSTEM_PROMPT}${analysisDirective}\n\n다음은 이번 답변에 참고할 수 있는 정보입니다. 반드시 필요한 경우에만 활용하세요.\n\n${contextBlock}`
             : SYSTEM_PROMPT;
 
         const messages: any[] = [
@@ -186,26 +267,37 @@ export async function POST(req: Request) {
         // web-search results balloon (common for price / market queries on the
         // free tier). Fall back to a plain LLM so the user still gets *some*
         // answer instead of an error.
-        const isCompound = /compound/.test(GROQ_MODEL);
+        // Taste analysis never needs web search — its whole job is to reason
+        // over the user's local data. Route it to a strong non-compound model:
+        // - 70B has better real-whisky knowledge (fewer hallucinated names)
+        // - Bypasses compound's low TPM which the note context easily exceeds
+        // Fallback to 8b if 70B rate-limits.
         const FALLBACK_MODEL = "llama-3.1-8b-instant";
+        const TASTE_MODEL = "llama-3.3-70b-versatile";
+        const activeModel = tasteAnalysisMode ? TASTE_MODEL : GROQ_MODEL;
+        const isCompound = /compound/.test(activeModel);
         let completion;
         try {
             completion = await groq.chat.completions.create(
                 isCompound
-                    ? ({ model: GROQ_MODEL, messages } as any)
-                    : { model: GROQ_MODEL, messages, temperature: 0.7, max_tokens: 1500 }
+                    ? ({ model: activeModel, messages } as any)
+                    : { model: activeModel, messages, temperature: 0.7, max_tokens: 1500 }
             );
         } catch (e: any) {
             const status = e?.status;
-            if (isCompound && (status === 413 || status === 400)) {
-                console.warn(`[Chatbot] compound returned ${status} — falling back to ${FALLBACK_MODEL}`);
+            // 413 = compound web search results too big
+            // 400 = compound rejected params
+            // 429 = rate limit (both compound and 70B have tight free-tier TPM)
+            const shouldFallback = (isCompound && (status === 413 || status === 400)) || status === 429;
+            if (shouldFallback && activeModel !== FALLBACK_MODEL) {
+                console.warn(`[Chatbot] ${activeModel} returned ${status} — falling back to ${FALLBACK_MODEL}`);
                 completion = await groq.chat.completions.create({
                     model: FALLBACK_MODEL,
                     messages: [
                         ...messages,
-                        { role: "system", content: "웹 검색을 사용할 수 없어요. 알고 있는 지식으로만 답변하세요. 최신 가격이나 시세는 정확히 알 수 없으니, 대략적인 참고 정보만 제공하고 정확한 가격은 판매처를 직접 확인하라고 안내하세요." }
+                        { role: "system", content: "제공된 컨텍스트만으로 답변하세요. 위스키 이름을 지어내지 말고 확실히 아는 실존 위스키만 언급하세요. 확신이 없다면 특정 이름 대신 스타일 설명만 하세요." }
                     ],
-                    temperature: 0.7,
+                    temperature: 0.5,
                     max_tokens: 1500,
                 });
             } else {

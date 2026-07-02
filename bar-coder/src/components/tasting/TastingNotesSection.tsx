@@ -167,18 +167,21 @@ export default function TastingNotesSection({ uid, inventoryId, inventoryName }:
                         const ratingNum = n.rating !== undefined && n.rating !== null && n.rating !== "" ? Number(n.rating) : undefined;
                         return (
                             <div key={n.id} className="rounded-xl bg-surface-container-low/40 border border-outline-variant/10 overflow-hidden">
-                                <button
-                                    onClick={() => setExpandedId(isOpen ? null : n.id)}
-                                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-surface-container-low"
-                                >
-                                    <div className="flex flex-col min-w-0">
+                                <div className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-surface-container-low">
+                                    {/* Expand toggle — clickable summary. Sibling of action buttons, not parent. */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setExpandedId(isOpen ? null : n.id)}
+                                        aria-expanded={isOpen}
+                                        className="flex-1 min-w-0 flex flex-col text-left"
+                                    >
                                         <span className="text-[11px] font-bold text-on-surface tabular-nums">{n.date || "—"}</span>
                                         {ratingNum !== undefined && <StarRating value={ratingNum} />}
-                                    </div>
+                                    </button>
                                     <div className="flex items-center gap-0.5 shrink-0">
                                         <button
                                             type="button"
-                                            onClick={(e) => { e.stopPropagation(); openEdit(n); }}
+                                            onClick={() => openEdit(n)}
                                             className="p-1 rounded hover:bg-primary/10 text-on-surface-variant hover:text-primary"
                                             aria-label="Edit"
                                         >
@@ -186,14 +189,14 @@ export default function TastingNotesSection({ uid, inventoryId, inventoryName }:
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={(e) => { e.stopPropagation(); remove(n.id); }}
+                                            onClick={() => remove(n.id)}
                                             className="p-1 rounded hover:bg-red-500/10 text-on-surface-variant hover:text-red-400"
                                             aria-label="Delete"
                                         >
                                             <Trash2 className="w-3 h-3" />
                                         </button>
                                     </div>
-                                </button>
+                                </div>
                                 {isOpen && (
                                     <div className="px-3 pb-3 pt-1 flex flex-col gap-2 border-t border-outline-variant/10 text-[11px] leading-relaxed">
                                         {n.nose && <NoteField label="Nose" body={n.nose} />}
@@ -262,7 +265,7 @@ export default function TastingNotesSection({ uid, inventoryId, inventoryName }:
 
                             <EditorField label="Nose (향)">
                                 <textarea
-                                    rows={2}
+                                    rows={7}
                                     value={form.nose || ""}
                                     onChange={e => setForm({ ...form, nose: e.target.value })}
                                     placeholder="예: 바닐라, 캐러멜, 부드러운 오크"
@@ -272,7 +275,7 @@ export default function TastingNotesSection({ uid, inventoryId, inventoryName }:
 
                             <EditorField label="Palate (맛)">
                                 <textarea
-                                    rows={2}
+                                    rows={7}
                                     value={form.palate || ""}
                                     onChange={e => setForm({ ...form, palate: e.target.value })}
                                     placeholder="예: 꿀, 몰트, 살짝 매콤"
@@ -282,7 +285,7 @@ export default function TastingNotesSection({ uid, inventoryId, inventoryName }:
 
                             <EditorField label="Finish (여운)">
                                 <textarea
-                                    rows={2}
+                                    rows={7}
                                     value={form.finish || ""}
                                     onChange={e => setForm({ ...form, finish: e.target.value })}
                                     placeholder="예: 길고 따뜻하며 오크 여운"
@@ -292,7 +295,7 @@ export default function TastingNotesSection({ uid, inventoryId, inventoryName }:
 
                             <EditorField label="Overall / 메모">
                                 <textarea
-                                    rows={3}
+                                    rows={7}
                                     value={form.overall || ""}
                                     onChange={e => setForm({ ...form, overall: e.target.value })}
                                     placeholder="전체적인 인상, 상황, 페어링 등 자유롭게"

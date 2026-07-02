@@ -121,7 +121,12 @@ export async function deleteInventoryItem(id: number): Promise<void> {
 export async function getRecipes(): Promise<RecipeItem[]> {
     if (!RECIPES_TABLE_ID) throw new Error("Recipes Table ID is missing.");
 
-    const CACHE_KEY = "bar_coder_recipes_cache_v3";
+    // v4: excludes embedding field to stay under localStorage quota.
+    const CACHE_KEY = "bar_coder_recipes_cache_v4";
+    // Best-effort cleanup of the old oversized cache so it stops eating quota.
+    if (typeof window !== "undefined") {
+        try { localStorage.removeItem("bar_coder_recipes_cache_v3"); } catch { /* noop */ }
+    }
     const CACHE_TTL = 60 * 60 * 1000; // 1시간 (ms)
 
     // 1. 브라우저 캐시 확인
@@ -159,12 +164,19 @@ export async function getRecipes(): Promise<RecipeItem[]> {
             }
         }
 
-        // 2. 캐시 저장
+        // 2. 캐시 저장 — embedding 필드는 서버 RAG 전용이라 클라이언트 캐시에서 제외.
+        //    618개 recipe × 1024-dim float = ~9MB로 localStorage 5~10MB 한도를 넘김.
         if (typeof window !== "undefined") {
-            localStorage.setItem(CACHE_KEY, JSON.stringify({
-                data: allResults,
-                timestamp: Date.now()
-            }));
+            const compact = allResults.map(({ embedding, ...rest }) => rest);
+            try {
+                localStorage.setItem(CACHE_KEY, JSON.stringify({
+                    data: compact,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {
+                // If still too large (e.g. big images), skip caching silently.
+                console.warn("Recipe cache write failed:", (e as Error).message);
+            }
         }
 
         return allResults;
@@ -239,6 +251,23 @@ export async function uploadFile(file: File): Promise<any> {
         return response.data; // { url, name, size, type, ... }
     } catch (error) {
         console.error("Error uploading file to Baserow:", error);
+        throw error;
+    }
+}
+
+/**
+ * [TastingNotes] 사용자의 모든 테이스팅 노트 (최신순). 취향 분석용.
+ */
+export async function getAllTastingNotes(uid: string): Promise<TastingNote[]> {
+    if (!TASTING_TABLE_ID) throw new Error("Tasting notes table ID is missing.");
+    try {
+        const response = await axios.get(
+            `${BASEROW_API_URL}/database/rows/table/${TASTING_TABLE_ID}/?user_field_names=true&filter__user_uid__equal=${uid}&order_by=-date&size=200`,
+            { headers: getHeaders() }
+        );
+        return response.data.results;
+    } catch (error) {
+        console.error("Error fetching all tasting notes:", error);
         throw error;
     }
 }
