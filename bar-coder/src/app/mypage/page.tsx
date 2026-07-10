@@ -151,12 +151,11 @@ function MyPageContent() {
     }, [inventory]);
 
     const fetchData = async () => {
-        if (!user) return;
         setLoading(true);
         setError(null);
         try {
             const [invData, fieldsData] = await Promise.all([
-                getInventory(user.uid),
+                getInventory(user?.uid || "", !user || user.isAnonymous),
                 getInventoryFields()
             ]);
             setInventory(invData);
@@ -175,13 +174,11 @@ function MyPageContent() {
     };
 
     useEffect(() => {
-        if (!authLoading && !user) {
-            router.push("/");
-        }
+        // Guest Mode: Allow unauthenticated access without redirection
     }, [user, authLoading, router]);
 
     useEffect(() => {
-        if (user && !authLoading) {
+        if (!authLoading) {
             fetchData();
         }
     }, [user, authLoading]);
@@ -319,7 +316,10 @@ function MyPageContent() {
 
     const handleUpdateProfile = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user) return;
+        if (!user || user.isAnonymous) {
+            alert("데모 모드에서는 프로필 수정을 할 수 없습니다.");
+            return;
+        }
         
         setIsUpdatingProfile(true);
         try {
@@ -370,6 +370,10 @@ function MyPageContent() {
 
 
     const handleDelete = async (id: number) => {
+        if (!user || user.isAnonymous) {
+            alert("데모 모드에서는 재고 삭제가 제한됩니다.");
+            return;
+        }
         if (!confirm("정말 이 재고를 삭제하시겠습니까?")) return;
         try {
             await deleteInventoryItem(id);
@@ -382,7 +386,10 @@ function MyPageContent() {
 
     const handleFormSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user) return;
+        if (!user || user.isAnonymous) {
+            alert("데모 모드에서는 재고 추가 및 수정이 제한됩니다.");
+            return;
+        }
         if (!formData.name.trim()) {
             alert("이름을 입력해주세요.");
             return;
@@ -443,7 +450,7 @@ function MyPageContent() {
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
     );
 
-    if (authLoading || !user) {
+    if (authLoading) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-[#1a1a1a]">
                 <div className="spinner w-8 h-8 text-[#d4a843] border-2 rounded-full border-t-current border-transparent" />
@@ -454,6 +461,11 @@ function MyPageContent() {
     const handleDragEnd = async (event: DragEndEvent) => {
         const { active, over } = event;
         if (!over || active.id === over.id) return;
+
+        if (!user || user.isAnonymous) {
+            alert("데모 모드에서는 순서 변경이 저장되지 않습니다.");
+            return;
+        }
 
         const oldIdx = filteredInventory.findIndex(it => it.id === active.id);
         const newIdx = filteredInventory.findIndex(it => it.id === over.id);
@@ -519,7 +531,7 @@ function MyPageContent() {
                 <div className="relative group">
                     <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full p-0.5 bg-gradient-to-tr from-primary via-primary/50 to-transparent shadow-[0_0_30px_rgba(255,198,62,0.1)]">
                         <div className="w-full h-full rounded-full overflow-hidden border-[3px] border-background bg-surface-container flex items-center justify-center">
-                            {user.photoURL ? (
+                            {user?.photoURL ? (
                                 <img src={user.photoURL} alt={user.displayName || "Profile"} className="w-full h-full object-cover" />
                             ) : (
                                 <span className="material-symbols-outlined text-on-surface-variant/40 text-4xl" style={{ fontVariationSettings: "'FILL' 1, 'wght' 200, 'GRAD' 0, 'opsz' 24" }}>person</span>
@@ -527,12 +539,16 @@ function MyPageContent() {
                         </div>
                     </div>
                     <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-primary text-black text-[8px] font-black px-2.5 py-0.5 rounded-full tracking-[0.2em] uppercase shadow-lg">
-                        MEMBER
+                        {(!user || user.isAnonymous) ? "GUEST" : "MEMBER"}
                     </div>
                 </div>
                 <div className="text-center">
-                    <h2 className="text-xl sm:text-2xl font-headline font-bold text-on-surface tracking-tight">{user.displayName || "Home Bartender"}</h2>
-                    <p className="text-on-surface-variant/50 text-[10px] font-medium tracking-widest uppercase">{user.email}</p>
+                    <h2 className="text-xl sm:text-2xl font-headline font-bold text-on-surface tracking-tight">
+                        {user?.displayName || ((user && user.isAnonymous) ? "Anonymous Guest" : "Guest Mixologist")}
+                    </h2>
+                    <p className="text-on-surface-variant/50 text-[10px] font-medium tracking-widest uppercase">
+                        {user?.email || "Guest Mode"}
+                    </p>
                 </div>
             </section>
  
@@ -674,12 +690,26 @@ function MyPageContent() {
                             <span className="material-symbols-outlined text-on-surface-variant/30 group-hover:text-primary transition-colors">chevron_right</span>
                         </button>
                         
-                        <button onClick={() => { setIsSettingModalOpen(false); handleLogout(); }} className="w-full flex items-center justify-between py-4 hover:bg-red-500/[0.03] px-2 rounded-xl transition-all duration-300 group">
+                        <button 
+                            onClick={() => { 
+                                setIsSettingModalOpen(false); 
+                                if (!user || user.isAnonymous) {
+                                    router.push("/");
+                                } else {
+                                    handleLogout(); 
+                                }
+                            }} 
+                            className="w-full flex items-center justify-between py-4 hover:bg-red-500/[0.03] px-2 rounded-xl transition-all duration-300 group"
+                        >
                             <div className="flex items-center gap-4">
                                 <div className="w-9 h-9 rounded-xl bg-red-500/5 flex items-center justify-center group-hover:bg-red-500/20 transition-colors">
-                                    <span className="material-symbols-outlined text-red-400 text-lg" style={{ fontVariationSettings: "'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24" }}>logout</span>
+                                    <span className="material-symbols-outlined text-red-400 text-lg" style={{ fontVariationSettings: "'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24" }}>
+                                        {(!user || user.isAnonymous) ? "login" : "logout"}
+                                    </span>
                                 </div>
-                                <span className="font-headline font-bold text-sm text-red-400">Logout</span>
+                                <span className="font-headline font-bold text-sm text-red-400">
+                                    {(!user || user.isAnonymous) ? "Login" : "Logout"}
+                                </span>
                             </div>
                         </button>
                     </div>

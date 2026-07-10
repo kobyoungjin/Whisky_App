@@ -79,20 +79,17 @@ export default function RecipesPage() {
     });
 
     useEffect(() => {
-        if (!authLoading && !user) {
-            router.push("/");
-        }
+        // Guest Mode: Allow unauthenticated access without redirection
     }, [user, authLoading, router]);
 
     useEffect(() => {
         const fetchData = async () => {
-            if (!user) return;
             setLoading(true);
             setError(null);
             try {
                 const [recData, invData] = await Promise.all([
                     getRecipes(),
-                    getInventory(user.uid)
+                    getInventory(user?.uid || "", !user || user.isAnonymous)
                 ]);
 
                 // 랜덤으로 섞고 상위 12개만 추출 (Bento 그리드에 최적화)
@@ -110,7 +107,7 @@ export default function RecipesPage() {
             }
         };
 
-        if (user && !authLoading) {
+        if (!authLoading) {
             fetchData();
         }
     }, [user, authLoading]);
@@ -196,7 +193,7 @@ export default function RecipesPage() {
         return results;
     }, [searchQuery, selectedSpirits, selectedFlavor, selectedDifficulty, favoritesOnly, favorites, isFavorite, allRecipes, randomRecipes]);
 
-    if (authLoading || !user) {
+    if (authLoading) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-[#1a1a1a]">
                 <div className="spinner w-8 h-8 text-[#d4a843] border-2 rounded-full border-t-current border-transparent" />

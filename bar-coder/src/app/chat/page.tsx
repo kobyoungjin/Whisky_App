@@ -42,11 +42,11 @@ export default function ChatPage() {
     }, [messages, isSending]);
 
     useEffect(() => {
-        if (!loading && !user) router.push("/");
+        // Guest Mode: Allow unauthenticated access without redirection
     }, [user, loading, router]);
 
     const send = async (text: string) => {
-        if (!text.trim() || !user || isSending) return;
+        if (!text.trim() || isSending) return;
         const userMsg: Message = { role: "user", content: text.trim() };
         const nextHistory = [...messages, userMsg];
         setMessages(nextHistory);
@@ -55,7 +55,7 @@ export default function ChatPage() {
 
         try {
             const res = await axios.post("/api/chatbot", {
-                uid: user.uid,
+                uid: (!user || user.isAnonymous) ? "guest" : user.uid,
                 messages: nextHistory.map(m => ({ role: m.role, content: m.content })),
             });
             const answer: string = res.data.answer || "…";
@@ -87,7 +87,7 @@ export default function ChatPage() {
         setExpandedCard(null);
     };
 
-    if (loading || !user) return null;
+    if (loading) return null;
 
     // Only show quick suggestions when the conversation is fresh.
     const showSuggestions = messages.length === 1;

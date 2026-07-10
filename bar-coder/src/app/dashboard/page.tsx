@@ -25,19 +25,16 @@ export default function DashboardPage() {
     const [isAlmostExpanded, setIsAlmostExpanded] = useState(false);
 
     useEffect(() => {
-        if (!authLoading && !user) {
-            router.push("/");
-        }
+        // Guest Mode: Allow unauthenticated access without redirection
     }, [user, authLoading, router]);
 
     useEffect(() => {
         const fetchDashboardData = async () => {
-            if (!user) return;
             setLoading(true);
             setError(null);
             try {
                 const [invData, recData] = await Promise.all([
-                    getInventory(user.uid),
+                    getInventory(user?.uid || "", !user || user.isAnonymous),
                     getRecipes()
                 ]);
                 setInventory(invData);
@@ -78,12 +75,12 @@ export default function DashboardPage() {
             }
         };
 
-        if (user && !authLoading) {
+        if (!authLoading) {
             fetchDashboardData();
         }
     }, [user, authLoading]);
 
-    if (authLoading || !user) {
+    if (authLoading) {
         return (
             <div className="flex items-center justify-center min-h-screen bg-[#1a1a1a]">
                 <div className="spinner w-8 h-8 text-[#d4a843] border-2 rounded-full border-t-current border-transparent" />
@@ -105,7 +102,7 @@ export default function DashboardPage() {
                     <h2 className="text-3xl sm:text-5xl font-headline italic text-on-surface leading-tight mb-2">
                         Welcome back,<br />
                         <span className="text-primary not-italic font-black tracking-tighter decoration-primary/30 decoration-wavy underline underline-offset-8">
-                            {user.displayName || user.email?.split('@')[0] || "Mixologist"}
+                            {user?.displayName || user?.email?.split('@')[0] || (user?.isAnonymous ? "Anonymous Guest" : "Guest Mixologist")}
                         </span>
                     </h2>
                     <p className="text-on-surface-variant font-body text-sm tracking-wide mt-6 opacity-80">현재 홈바의 정교한 재고 현황과 큐레이션입니다.</p>

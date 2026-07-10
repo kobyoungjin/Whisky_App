@@ -141,7 +141,13 @@ export default function ScanModal({ isOpen, onClose }: ScanModalProps) {
     }, [stopCamera]);
 
     const addToInventory = useCallback(async () => {
-        if (!result || !user) return;
+        if (!result) return;
+        if (!user || user.isAnonymous) {
+            alert("데모 모드에서는 술장 추가 기능이 제한됩니다. 구글/이메일 로그인 후 나만의 술장을 채워보세요!");
+            setStatus("idle");
+            onClose();
+            return;
+        }
         setStatus("adding");
 
         try {
@@ -163,7 +169,7 @@ export default function ScanModal({ isOpen, onClose }: ScanModalProps) {
             setErrorMsg("술장 등록 중 오류가 발생했습니다.");
             setStatus("error");
         }
-    }, [result, user, categoryOptions]);
+    }, [result, user, categoryOptions, onClose]);
 
     const uploadFromFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];

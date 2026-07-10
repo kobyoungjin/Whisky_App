@@ -18,10 +18,55 @@ const getHeaders = () => {
 };
 
 /**
+ * [Inventory] Fetch default inventory (owner's inventory) for guests/anonymous users.
+ * It queries all rows without UID filter, finds the most common user_uid, and filters by it.
+ * This dynamically discovers the owner's UID and returns their inventory.
+ */
+export async function getDefaultInventory(): Promise<InventoryItem[]> {
+    if (!INVENTORY_TABLE_ID) throw new Error("Inventory Table ID is missing.");
+    try {
+        const response = await axios.get(
+            `${BASEROW_API_URL}/database/rows/table/${INVENTORY_TABLE_ID}/?user_field_names=true&order_by=Order&size=200`,
+            { headers: getHeaders() }
+        );
+        const allRows = response.data.results as InventoryItem[];
+        if (allRows.length === 0) return [];
+
+        const uidCounts: Record<string, number> = {};
+        allRows.forEach((row: any) => {
+            const rowUid = row.user_uid;
+            if (rowUid) {
+                uidCounts[rowUid] = (uidCounts[rowUid] || 0) + 1;
+            }
+        });
+
+        let ownerUid = "";
+        let maxCount = 0;
+        for (const [uid, count] of Object.entries(uidCounts)) {
+            if (count > maxCount) {
+                maxCount = count;
+                ownerUid = uid;
+            }
+        }
+
+        if (ownerUid) {
+            return allRows.filter((row: any) => row.user_uid === ownerUid);
+        }
+        return allRows;
+    } catch (error) {
+        console.error("Error fetching default inventory:", error);
+        throw error;
+    }
+}
+
+/**
  * [Inventory] 사용자의 UID 기반으로 재고 항목 조회
  */
-export async function getInventory(uid: string): Promise<InventoryItem[]> {
+export async function getInventory(uid: string, isAnonymous: boolean = false): Promise<InventoryItem[]> {
     if (!INVENTORY_TABLE_ID) throw new Error("Inventory Table ID is missing.");
+    if (!uid || uid === "guest" || uid === "dummy-uid" || isAnonymous) {
+        return getDefaultInventory();
+    }
     try {
         const response = await axios.get(
             `${BASEROW_API_URL}/database/rows/table/${INVENTORY_TABLE_ID}/?user_field_names=true&filter__user_uid__equal=${uid}&order_by=Order&size=200`,
